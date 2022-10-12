@@ -1,0 +1,7 @@
+# Project exclude paths
+/cmake-build-debug/
+/build/
+Feature_plp.txt
+total_plp.txt
+Track_plp.txt
+/Vocabulary/ORBvoc.txt
