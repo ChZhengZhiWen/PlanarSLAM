@@ -6112,7 +6112,7 @@ long removeghosts(struct mesh *m, struct behavior *b, struct otri *startghost)
   triangle ptr;                         /* Temporary variable used by sym(). */
 
   if (b->verbose) {
-    printf("  Removing ghost triangles.\n");
+///    printf("  Removing ghost triangles.\n");
   }
   /* Find an edge on the convex hull to start point location from. */
   lprev(*startghost, searchedge);
@@ -6165,7 +6165,7 @@ long divconqdelaunay(struct mesh *m, struct behavior *b)
   int i, j;
 
   if (b->verbose) {
-    printf("  Sorting vertices.\n");
+///    printf("  Sorting vertices.\n");
   }
 
   /* Allocate an array of pointers to vertices for sorting. */
@@ -6206,7 +6206,7 @@ long divconqdelaunay(struct mesh *m, struct behavior *b)
   }
 
   if (b->verbose) {
-    printf("  Forming triangulation.\n");
+///    printf("  Forming triangulation.\n");
   }
 
   /* Form the Delaunay triangulation. */

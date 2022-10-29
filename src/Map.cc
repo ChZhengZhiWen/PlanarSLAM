@@ -163,19 +163,20 @@ namespace Planar_SLAM {
         int maxSize = 0;
 
         if(out)
-            cout << "Matching planes..." << endl;
+            cout <<endl<< "Matching planes............................." << endl;
 
         for (int i = 0; i < pF.mnPlaneNum; ++i) {
             cv::Mat p1 = pF.mvPlaneCoefficients[i];
             if(out)
-                cout << " plane  " << i << ": " << endl;
+                cout << "plane  " << i << ": " << endl;
 
             if(out)
-                cout << " p1  " << p1.t() << ": " << endl;
+                cout << "p1  " << p1.t() << ": " << endl;
 
             for (int j = i+1;j < pF.mnPlaneNum; ++j) {
                 cv::Mat p2 = pF.mvPlaneCoefficients[j];
 
+                // 向量点积不知道这里为什么就直接是角度了
                 float angle = p1.at<float>(0) * p2.at<float>(0) +
                               p1.at<float>(1) * p2.at<float>(1) +
                               p1.at<float>(2) * p2.at<float>(2);
@@ -184,12 +185,12 @@ namespace Planar_SLAM {
                     cout << j << ", p2 : " << p2.t() << endl;
 
                 if(out)
-                    cout << j << ", angle : " << angle << endl;
+                    cout <<"plane_"<< j <<" and plane_"<< i << " , angle : " << angle << endl;
 
                 // vertical planes
                 if (angle < lverTh && angle > -lverTh && (pF.mvPlanePoints[i].size() + pF.mvPlanePoints[j].size()) > maxSize) {
                     if(out)
-                        cout << "  vertical!" << endl;
+                        cout << "vertical!" << endl;
                     maxSize = pF.mvPlanePoints[i].size() + pF.mvPlanePoints[j].size();
 
                     if (bestP1.empty() || bestP2.empty()) {
@@ -210,12 +211,12 @@ namespace Planar_SLAM {
 
         if (bestP1.empty() || bestP2.empty()) {
             if(out)
-                cout << "Matching planes and lines..." << endl;
+                cout <<endl<< "Matching planes and lines...--------------------------------------" << endl;
 
             for (int i = 0; i < pF.mnPlaneNum; ++i) {
                 cv::Mat p = pF.ComputePlaneWorldCoeff(i);
                 if(out)
-                    cout << " plane  " << i << ": " << endl;
+                    cout << "plane  " << i << ": " << endl;
 
                 for (int j = 0; j < pF.mvLines3D.size(); ++j) {
                     Vector6d lineVector = pF.obtain3DLine(j);
@@ -231,6 +232,7 @@ namespace Planar_SLAM {
                     endPoint.at<float>(2, 0) = lineVector[5];
 
                     cv::Mat line = startPoint - endPoint;
+                    //单位向量
                     line /= cv::norm(line);
 
                     if(out)
@@ -241,11 +243,11 @@ namespace Planar_SLAM {
                                   p.at<float>(2, 0) * line.at<float>(2, 0);
 
                     if(out)
-                        cout << j << ", angle : " << angle << endl;
+                        cout <<"line_"<< j <<" and plane_"<<  i << " , angle : " << angle << endl;
 
                     if (angle < lverTh && angle > -lverTh) {
                         if(out)
-                            cout << "  vertical!" << endl;
+                            cout << "vertical!" << endl;
                         lverTh = abs(angle);
 
                         if (bestP1.empty() || bestP2.empty()) {

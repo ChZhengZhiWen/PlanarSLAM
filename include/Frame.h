@@ -132,6 +132,11 @@ namespace Planar_SLAM
         static float cy;
         static float invfx;
         static float invfy;
+//        失真参数
+//        DistCoef.at<float>(0) = fSettings["Camera.k1"];
+//        DistCoef.at<float>(1) = fSettings["Camera.k2"];
+//        DistCoef.at<float>(2) = fSettings["Camera.p1"];
+//        DistCoef.at<float>(3) = fSettings["Camera.p2"];
         cv::Mat mDistCoef;
 
         // Stereo baseline multiplied by fx.

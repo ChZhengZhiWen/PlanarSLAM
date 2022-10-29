@@ -185,8 +185,10 @@ void System::Shutdown()
     {
         usleep(5000);
     }
-    if(mpViewer)
-        pangolin::BindToContext("ORB-SLAM2: Map Viewer");
+
+    ///根据网上的方法注释掉这两行解决程序跑完数据集就会卡住的问题
+//    if(mpViewer)
+//        pangolin::BindToContext("ORB-SLAM2: Map Viewer");
 }
 
 void System::SaveTrajectoryTUM(const string &filename)

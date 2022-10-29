@@ -217,6 +217,7 @@ namespace Planar_SLAM {
         mLastProcessedState = mState;
 
         // Get Map Mutex -> Map cannot be changed
+        //当有效时,lock锁管理模板类管理锁对象，周期结束后自动解锁 ，意思为锁住地图更新
         unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
         if (mState == NOT_INITIALIZED) {
@@ -231,7 +232,7 @@ namespace Planar_SLAM {
 
             } else
                 MonocularInitialization();
-
+            //更新帧绘制器中存储的最新状态
             mpFrameDrawer->Update(this);
 
             if (mState != OK)
@@ -1162,22 +1163,48 @@ namespace Planar_SLAM {
             mCurrentFrame.SetPose(cv::Mat::eye(4, 4, CV_32F));
 
             // Create KeyFrame
+            // 将当前帧构造为初始关键帧
+            // mCurrentFrame的数据类型为Frame
+            // KeyFrame包含Frame、地图3D点、以及BoW
+            // KeyFrame里有一个mpMap，Tracking里有一个mpMap，而KeyFrame里的mpMap都指向Tracking里的这个mpMap
+            // KeyFrame里有一个mpKeyFrameDB，Tracking里有一个mpKeyFrameDB，而KeyFrame里的mpMap都指向Tracking里的这个mpKeyFrameDB
+            // 提问: 为什么要指向Tracking中的相应的变量呢? -- 因为Tracking是主线程，是它创建和加载的这些模块
             KeyFrame *pKFini = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB);
 
             // Insert KeyFrame in the map
+            // KeyFrame中包含了地图、反过来地图中也包含了KeyFrame，相互包含
+            // 在地图中添加该初始关键帧
             mpMap->AddKeyFrame(pKFini);
 
             // Create MapPoints and asscoiate to KeyFrame
+            // 为每个特征点构造MapPoint
             for (int i = 0; i < mCurrentFrame.N; i++) {
                 float z = mCurrentFrame.mvDepth[i];
                 if (z > 0) {
+                    // 通过反投影得到该特征点的世界坐标系下3D坐标
                     cv::Mat x3D = mCurrentFrame.UnprojectStereo(i);
+                    // 将3D点构造为MapPoint
                     MapPoint *pNewMP = new MapPoint(x3D, pKFini, mpMap);
+
+                    // 为该MapPoint添加属性：
+                    // a.观测到该MapPoint的关键帧
+                    // b.该MapPoint的描述子
+                    // c.该MapPoint的平均观测方向和深度范围
+
+                    // a.表示该MapPoint可以被哪个KeyFrame的哪个特征点观测到
                     pNewMP->AddObservation(pKFini, i);
+                    // 表示该KeyFrame的哪个特征点可以观测到哪个3D点
                     pKFini->AddMapPoint(pNewMP, i);
+                    // b.从众多观测到该MapPoint的特征点中挑选区分度最高的描述子
                     pNewMP->ComputeDistinctiveDescriptors();
+                    // c.更新该MapPoint平均观测方向以及观测距离的范围
                     pNewMP->UpdateNormalAndDepth();
+
+                    // 在地图中添加该MapPoint
                     mpMap->AddMapPoint(pNewMP);
+
+                    // 将该MapPoint添加到当前帧的mvpMapPoints中
+                    // 为当前Frame的特征点与MapPoint之间建立索引
                     mCurrentFrame.mvpMapPoints[i] = pNewMP;
                 }
             }
@@ -1189,6 +1216,7 @@ namespace Planar_SLAM {
 
                 if (z > 0) {
                     Vector6d line3D = mCurrentFrame.obtain3DLine(i);
+                    // 将3D线构造为MapPoint
                     MapLine *pNewML = new MapLine(line3D, pKFini, mpMap);
                     pNewML->AddObservation(pKFini, i);
                     pKFini->AddMapLine(pNewML, i);
@@ -1211,8 +1239,10 @@ namespace Planar_SLAM {
 
             mpPointCloudMapping->print();
 
+            // 在局部地图中添加该初始关键帧
             mpLocalMapper->InsertKeyFrame(pKFini);
 
+            // 更新当前帧为上一帧
             mLastFrame = Frame(mCurrentFrame);
             mnLastKeyFrameId = mCurrentFrame.mnId;
             mpLastKeyFrame = pKFini;
@@ -1224,6 +1254,9 @@ namespace Planar_SLAM {
             mpReferenceKF = pKFini;
             mCurrentFrame.mpReferenceKF = pKFini;
 
+            // 把当前（最新的）局部MapPoints作为ReferenceMapPoints
+            // ReferenceMapPoints是DrawMapPoints函数画图的时候用的
+            // Lines同理
             mpMap->SetReferenceMapPoints(mvpLocalMapPoints);
             mpMap->SetReferenceMapLines(mvpLocalMapLines);
 

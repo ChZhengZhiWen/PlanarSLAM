@@ -19,8 +19,10 @@ namespace Planar_SLAM {
 
         // filter lines
         if (keylines.size() > lsdNFeatures) {
+            //按线段与图像高度和宽度最大值的比值进行排序按降序排列
             sort(keylines.begin(), keylines.end(), sort_lines_by_response());
             keylines.resize(lsdNFeatures);
+            //排序后将对象ID重新赋值
             for (unsigned int i = 0; i < lsdNFeatures; i++)
                 keylines[i].class_id = i;
         }
@@ -33,6 +35,7 @@ namespace Planar_SLAM {
             Vector3d ep_l;
             ep_l << it->endPointX, it->endPointY, 1.0;
             Vector3d lineF;
+            //线段断点的叉乘并归一化得到直线方程系数
             lineF << sp_l.cross(ep_l);
             lineF = lineF / sqrt(lineF(0) * lineF(0) + lineF(1) * lineF(1) + lineF(2) * lineF(2));
             keylineFunctions.push_back(lineF);

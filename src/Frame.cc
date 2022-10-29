@@ -79,6 +79,9 @@ namespace Planar_SLAM {
 
         cv::Mat depth;
         if (depthMapFactor != 1 || imDepth.type() != CV_32F) {
+            //比例缩放 不改变rows和cols
+            //参数alpha可以让数据放缩到指定的范围内，比如从字节到浮点数类型alpha=1.0/255.0时表示从0～255切换到0～1之间alpha=255时表示从0～1切换到0～255之间
+//            *this(x,y)*alpha+beta
             imDepth.convertTo(depth, CV_32F, depthMapFactor);
         }
         cv::Mat tmpK = (cv::Mat_<double>(3, 3) << fx, 0, cx,
@@ -119,8 +122,8 @@ namespace Planar_SLAM {
         if (mbInitialComputations) {
             ComputeImageBounds(imGray);
 
-            mfGridElementWidthInv = static_cast<float>(FRAME_GRID_COLS) / static_cast<float>(mnMaxX - mnMinX);
-            mfGridElementHeightInv = static_cast<float>(FRAME_GRID_ROWS) / static_cast<float>(mnMaxY - mnMinY);
+            mfGridElementWidthInv = static_cast<float>(FRAME_GRID_COLS) / static_cast<float>(mnMaxX - mnMinX);//=0.1
+            mfGridElementHeightInv = static_cast<float>(FRAME_GRID_ROWS) / static_cast<float>(mnMaxY - mnMinY);//=0.1
 
             fx = K.at<float>(0, 0);
             fy = K.at<float>(1, 1);
@@ -151,9 +154,13 @@ namespace Planar_SLAM {
         mvbParPlaneOutlier = vector<bool>(mnPlaneNum, false);
     }
 
-
+//  为网格指定关键点以加快特征匹配
     void Frame::AssignFeaturesToGrid() {
         int nReserve = 0.5f * N / (FRAME_GRID_COLS * FRAME_GRID_ROWS);
+//        cout<<"N "<<N<<endl;
+        cout<<"nReserve "<<nReserve<<endl;
+        cout<<"nReserve1 "<<0.5f * N / (FRAME_GRID_COLS * FRAME_GRID_ROWS)<<endl;
+
         for (unsigned int i = 0; i < FRAME_GRID_COLS; i++)
             for (unsigned int j = 0; j < FRAME_GRID_ROWS; j++)
                 mGrid[i][j].reserve(nReserve);
@@ -165,6 +172,8 @@ namespace Planar_SLAM {
             if (PosInGrid(kp, nGridPosX, nGridPosY))
                 mGrid[nGridPosX][nGridPosY].push_back(i);
         }
+//        mGrid中数据为0
+//        cout<<"mGrid size "<<mGrid[0][0].size()<<" mGrid "<<mGrid[0][0].data()<<endl;
     }
 
     void Frame::ExtractLSD(const cv::Mat &im, const cv::Mat &depth,cv::Mat K) {
@@ -202,6 +211,7 @@ namespace Planar_SLAM {
                 // use nearest neighbor to querry depth value
                 // assuming position (0,0) is the top-left corner of image, then the
                 // top-left pixel's center would be (0.5,0.5)
+                //将线段分成numSmp段，每隔numSmp段取一个坐标
                 cv::Point2d pt = mvKeylinesUn[i].getStartPoint() * (1 - j / numSmp) +
                                  mvKeylinesUn[i].getEndPoint() * (j / numSmp);
 
@@ -233,7 +243,7 @@ namespace Planar_SLAM {
 
             if (pts3d.size() < 10.0)
                 continue;
-
+///通过RANSAC估计3D线，以去除潜在的异常值 暂时没看
             RandomLine3d tmpLine;
             vector<RandomPoint3d> rndpts3d;
             rndpts3d.reserve(pts3d.size());
@@ -522,12 +532,12 @@ namespace Planar_SLAM {
         return vIndices;
     }
 
-
+//  计算关键点的单元格（如果在网格外，则返回false）
     bool Frame::PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY) {
         posX = round((kp.pt.x - mnMinX) * mfGridElementWidthInv);
         posY = round((kp.pt.y - mnMinY) * mfGridElementHeightInv);
 
-        //Keypoint's coordinates are undistorted, which could cause to go out of the image
+            //Keypoint's coordinates are undistorted, which could cause to go out of the image
         if (posX < 0 || posX >= FRAME_GRID_COLS || posY < 0 || posY >= FRAME_GRID_ROWS)
             return false;
 
@@ -544,6 +554,7 @@ namespace Planar_SLAM {
 
     void Frame::UndistortKeyPoints() {
         if (mDistCoef.at<float>(0) == 0.0) {
+            //TUM dataset is 0
             mvKeysUn = mvKeys;
             return;
         }
@@ -570,7 +581,9 @@ namespace Planar_SLAM {
         }
     }
 
+    //计算未失真图像的图像边界
     void Frame::ComputeImageBounds(const cv::Mat &imLeft) {
+        //TUM dataset mDistCoef is 0
         if (mDistCoef.at<float>(0) != 0.0) {
             cv::Mat mat(4, 2, CV_32F);
             mat.at<float>(0, 0) = 0.0;
@@ -603,7 +616,7 @@ namespace Planar_SLAM {
     void Frame::ComputeStereoFromRGBD(const cv::Mat &imDepth) {
         mvuRight = vector<float>(N, -1);
         mvDepth = vector<float>(N, -1);
-
+//  RGBD下mvKeys == mvKeysUn
         for (int i = 0; i < N; i++) {
             const cv::KeyPoint &kp = mvKeys[i];
             const cv::KeyPoint &kpU = mvKeysUn[i];
@@ -644,6 +657,7 @@ namespace Planar_SLAM {
         return Lines3D;
     }
 
+    //imDepth是经过convert转变的，Depth是原本的
     void Frame::ComputePlanes(const cv::Mat &imDepth, const cv::Mat &Depth, const cv::Mat &imRGB, cv::Mat K, float depthMapFactor) {
         planeDetector.readColorImage(imRGB);
         planeDetector.readDepthImage(Depth, K, depthMapFactor);
@@ -669,17 +683,21 @@ namespace Planar_SLAM {
             double cy = extractedPlane->center[1];
             double cz = extractedPlane->center[2];
 
+            //将(cx,cy,cz)投影到法向量上的距离
             float d = (float) -(nx * cx + ny * cy + nz * cz);
 
             pcl::VoxelGrid<PointT> voxel;
+            // 设置每个体素的大小
             voxel.setLeafSize(0.1, 0.1, 0.1);
 
             PointCloud::Ptr coarseCloud(new PointCloud());
             voxel.setInputCloud(inputCloud);
+            //调用滤波方法并返回滤波后的点云结果。
             voxel.filter(*coarseCloud);
 
             cv::Mat coef = (cv::Mat_<float>(4, 1) << nx, ny, nz, d);
 
+            //remove useless planes
             bool valid = MaxPointDistanceFromPlane(coef, coarseCloud);
 
             if (!valid) {
@@ -814,6 +832,7 @@ namespace Planar_SLAM {
 
     cv::Mat Frame::ComputePlaneWorldCoeff(const int &idx) {
         cv::Mat temp;
+        //正交矩阵的转置等于逆
         cv::transpose(mTcw, temp);
         cv::Mat b = -mOw.t();
         return temp * mvPlaneCoefficients[idx];
