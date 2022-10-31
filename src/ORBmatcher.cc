@@ -157,6 +157,19 @@ bool ORBmatcher::CheckDistEpipolarLine(const cv::KeyPoint &kp1,const cv::KeyPoin
     return dsqr<3.84*pKF2->mvLevelSigma2[kp2.octave];
 }
 
+/**
+ * @brief 通过词袋，对关键帧的特征点进行跟踪
+ * 步骤
+ * Step 1：分别取出属于同一node的ORB特征点(只有属于同一node，才有可能是匹配点)
+ * Step 2：遍历KF中属于该node的特征点
+ * Step 3：遍历F中属于该node的特征点，寻找最佳匹配点
+ * Step 4：根据阈值 和 角度投票剔除误匹配
+ * Step 5：根据方向剔除误匹配的点
+ * @param  pKF               关键帧
+ * @param  F                 当前普通帧
+ * @param  vpMapPointMatches F中地图点对应的匹配，NULL表示未匹配
+ * @return                   成功匹配的数量
+ */
 int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches)
 {
     //获得关键帧的mvMapPoint

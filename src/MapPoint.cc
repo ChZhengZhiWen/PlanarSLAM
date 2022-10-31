@@ -146,7 +146,7 @@ map<KeyFrame*, size_t> MapPoint::GetObservations()
     unique_lock<mutex> lock(mMutexFeatures);
     return mObservations;
 }
-
+// 被观测到的相机数目
 int MapPoint::Observations()
 {
     unique_lock<mutex> lock(mMutexFeatures);

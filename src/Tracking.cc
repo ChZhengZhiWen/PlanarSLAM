@@ -247,7 +247,7 @@ namespace Planar_SLAM {
                 cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
                 cv::Mat MF_can_T = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
                 MF_can = TrackManhattanFrame(mLastRcm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
-
+cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
                 MF_can.copyTo(mLastRcm);//.clone();
                 MF_can_T = MF_can.t();
                 mRotation_wc = Rotation_cm * MF_can_T;
@@ -1009,6 +1009,7 @@ namespace Planar_SLAM {
             int b = numInCone[1];
             int c = numInCone[2];
             //cout<<"a:"<<a<<",b:"<<b<<",c:"<<c<<endl;
+            //a,b,c升序排列
             int temp = 0;
             if (a > b) temp = a, a = b, b = temp;
             if (b > c) temp = b, b = c, c = temp;
@@ -1016,7 +1017,7 @@ namespace Planar_SLAM {
             //cout<<"sequence  a:"<<a<<",b:"<<b<<",c:"<<c<<endl;
             if (b < minNumOfSN) {
                 minNumOfSN = (b + a) / 2;
-                cout << "thr" << minNumOfSN << endl;
+                cout << "thr " << minNumOfSN << endl;
             }
 
             //cout<<"new  minNumOfSN"<<minNumOfSN<<endl;
@@ -1055,6 +1056,7 @@ namespace Planar_SLAM {
                 //cout << "second SN time: " << time_used.count() << endl;
 
                 //cout << "test projectSN2MF" << ra << endl;
+                //sum求矩阵元素和  如果是单通道时需要加[0]
                 if (sum(RD_temp.R_cm_Rec)[0] != 0) {
                     numDirectionFound += 1;
                     if (a == 1) directionFound1 = 1;//第一个轴
@@ -1080,6 +1082,7 @@ namespace Planar_SLAM {
                 directionFound3 = 0;
                 break;
             } else if (numDirectionFound == 2) {
+                //通过两个正交的轴计算出第三个轴
                 if (directionFound1 && directionFound2) {
                     cv::Mat v1 = R_cm_update.colRange(0, 1).clone();
                     cv::Mat v2 = R_cm_update.colRange(1, 2).clone();
@@ -1087,6 +1090,7 @@ namespace Planar_SLAM {
                     R_cm_update.at<float>(0, 2) = v3.at<float>(0, 0);
                     R_cm_update.at<float>(1, 2) = v3.at<float>(1, 0);
                     R_cm_update.at<float>(2, 2) = v3.at<float>(2, 0);
+                    //determinant计算行列式
                     if (abs(cv::determinant(R_cm_update) + 1) < 0.5) {
                         R_cm_update.at<float>(0, 2) = -v3.at<float>(0, 0);
                         R_cm_update.at<float>(1, 2) = -v3.at<float>(1, 0);
@@ -1128,6 +1132,7 @@ namespace Planar_SLAM {
 
             R_cm_update = U* VT;
             vDensity.clear();
+            //acos()计算余弦值,trace()计算对角元素和
             if (acos((trace(R_cm.t() * R_cm_update)[0] - 1.0)) / 2 < 0.001) {
                 cout << "go outside" << endl;
                 break;
@@ -1657,6 +1662,7 @@ namespace Planar_SLAM {
     bool Tracking::TranslationEstimation() {
 
         // Compute Bag of Words vector
+        //将当前帧的描述子转化为BoW向量
         mCurrentFrame.ComputeBoW();
 
         // We perform first an ORB matching with the reference keyframe
@@ -1669,11 +1675,13 @@ namespace Planar_SLAM {
         vector<MapLine *> vpMapLineMatches;
         vector<pair<int, int>> vLineMatches;
 
+        // 当前帧和参考关键帧用BoW进行快速匹配，匹配结果记录在vpMapPointMatches，nmatches表示匹配的数目
         int nmatches = matcher.SearchByBoW(mpReferenceKF, mCurrentFrame, vpMapPointMatches);
         int lmatches = lmatcher.SearchByDescriptor(mpReferenceKF, mCurrentFrame, vpMapLineMatches);
 //        vpMapLineMatches = vector<MapLine *>(mCurrentFrame.NL, static_cast<MapLine *>(NULL));
 //        int lmatches = 0;
 
+        // 用上一次的Tcw设置初值，在PoseOptimization可以收敛快一些
         mCurrentFrame.SetPose(mLastFrame.mTcw);
 
         int planeMatches = pmatcher.SearchMapByCoefficients(mCurrentFrame, mpMap->GetAllMapPlanes());
@@ -1692,7 +1700,7 @@ namespace Planar_SLAM {
         mCurrentFrame.mvpMapPoints = vpMapPointMatches;
         mCurrentFrame.mvpMapLines = vpMapLineMatches;
 
-
+        //优化误差函数获取位姿
         //cout << "translation reference,pose before opti" << mCurrentFrame.mTcw << endl;
         Optimizer::TranslationOptimization(&mCurrentFrame);
         //cout << "translation reference,pose after opti" << mCurrentFrame.mTcw << endl;
@@ -1701,10 +1709,14 @@ namespace Planar_SLAM {
         int nmatchesLineMap = 0;
         int nmatchesPlaneMap = 0;
 
+        //剔除优化后的匹配点中的外点
+        //之所以在优化之后才剔除外点，是因为在优化的过程中就有了对这些外点的标记
         // Discard outliers
         for (int i = 0; i < mCurrentFrame.N; i++) {
             if (mCurrentFrame.mvpMapPoints[i]) {
+                //如果对应到的某个特征点是外点
                 if (mCurrentFrame.mvbOutlier[i]) {
+                    //清除它在当前帧中存在过的痕迹
                     MapPoint *pMP = mCurrentFrame.mvpMapPoints[i];
 
                     mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
@@ -1714,6 +1726,7 @@ namespace Planar_SLAM {
                     nmatches--;
 
                 } else if (mCurrentFrame.mvpMapPoints[i]->Observations() > 0)
+                    //匹配的内点计数++
                     nmatchesMap++;
             }
         }

@@ -23,7 +23,11 @@
 
 namespace Planar_SLAM
 {
-
+/**
+ * 将描述子转换为描述子向量，其实本质上是cv:Mat->std:vector
+ * @param Descriptors
+ * @return
+ */
 std::vector<cv::Mat> Converter::toDescriptorVector(const cv::Mat &Descriptors)
 {
     std::vector<cv::Mat> vDesc;

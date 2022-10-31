@@ -184,13 +184,17 @@ namespace Planar_SLAM {
                 if(out)
                     cout << j << ", p2 : " << p2.t() << endl;
 
-                if(out)
-                    cout <<"plane_"<< j <<" and plane_"<< i << " , angle : " << angle << endl;
+//                if(out)
+//                    cout <<"plane_"<< j <<" and plane_"<< i << " , angle : " << angle << endl;
 
                 // vertical planes
                 if (angle < lverTh && angle > -lverTh && (pF.mvPlanePoints[i].size() + pF.mvPlanePoints[j].size()) > maxSize) {
                     if(out)
-                        cout << "vertical!" << endl;
+                        cout << "vertical!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
+
+                    if(out)
+                        cout <<"plane_"<< j <<" and plane_"<< i << " , angle : " << angle << endl;
+
                     maxSize = pF.mvPlanePoints[i].size() + pF.mvPlanePoints[j].size();
 
                     if (bestP1.empty() || bestP2.empty()) {
@@ -235,19 +239,26 @@ namespace Planar_SLAM {
                     //单位向量
                     line /= cv::norm(line);
 
+                    //这里会出现许多线段的向量为nan的情况，这是因为这里查询的线段是j既初始化时探测到的线段数量
+                    // 但由于初始化时对线段通过RANSAC过滤去除了一部分所以有些查询的线段索引根本不在vector中
+                    // 而如果在obtain3DLine加入判断当前查询的数据是否在vector中我认为会大大增加计算量
                     if(out)
-                        cout << "line: " << line << endl;
+                        cout << "line_"<<j<<": " << line.t() << endl;
 
                     float angle = p.at<float>(0, 0) * line.at<float>(0, 0) +
                                   p.at<float>(1, 0) * line.at<float>(1, 0) +
                                   p.at<float>(2, 0) * line.at<float>(2, 0);
 
-                    if(out)
-                        cout <<"line_"<< j <<" and plane_"<<  i << " , angle : " << angle << endl;
+//                    if(out)
+//                        cout <<"line_"<< j <<" and plane_"<<  i << " , angle : " << angle << endl;
 
                     if (angle < lverTh && angle > -lverTh) {
                         if(out)
-                            cout << "vertical!" << endl;
+                            cout << "vertical!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
+
+                        if(out)
+                            cout <<"line_"<< j <<" and plane_"<<  i << " , angle : " << angle << endl;
+
                         lverTh = abs(angle);
 
                         if (bestP1.empty() || bestP2.empty()) {
@@ -328,13 +339,18 @@ namespace Planar_SLAM {
             }
 
             if(out) {
-                cout << "p1: " << bestP1 << endl;
-                cout << "p2: " << bestP2 << endl;
-                cout << "p3: " << p3 << endl;
+                cout << "p1: " << bestP1.t() << endl;
+                cout << "p2: " << bestP2.t() << endl;
+                cout << "p3: " << p3.t() << endl;
             }
+
+            cout << "loc1: " << loc1 << endl;
+            cout << "loc2: " << loc2 << endl;
+            cout << "loc3: " << loc3 << endl;
 
             cv::Mat first, second, third;
 
+            //loc1,loc2,loc3不会重复，我的理解是bestP1和bestP2是相互垂直的而p3是他们的叉积
             std::map<int, cv::Mat> sort;
             sort[loc1] = bestP1;
             sort[loc2] = bestP2;
@@ -361,7 +377,7 @@ namespace Planar_SLAM {
 
             Rotation_cm = U * VT;
         }
-
+cout<<"Rotation_cm "<<Rotation_cm<<"  FindManhattan()"<<endl;
         return Rotation_cm;
     }
 

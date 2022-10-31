@@ -253,7 +253,6 @@ namespace Planar_SLAM {
             }
             // using ransac to extract a 3d line from 3d pts
             tmpLine = extract3dline_mahdist(rndpts3d);
-
             if (tmpLine.pts.size() / len > 0.4 && cv::norm(tmpLine.A - tmpLine.B) > 0.02) {
                 //this line is reliable
                 mvDepthLine[i] = std::min(imDepth.at<float>(mvKeylinesUn[i].endPointY, mvKeylinesUn[i].endPointX),
@@ -268,7 +267,6 @@ namespace Planar_SLAM {
                 tempLine.p = Point2d(mvKeylinesUn[i].endPointX, mvKeylinesUn[i].endPointY);
                 tempLine.q = Point2d(mvKeylinesUn[i].startPointX, mvKeylinesUn[i].startPointY);
                 mVF3DLines.push_back(tempLine);
-
                 mvLines3D[i] << tmpLine.A.x, tmpLine.A.y, tmpLine.A.z, tmpLine.B.x, tmpLine.B.y, tmpLine.B.z;
             }
 
