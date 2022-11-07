@@ -19,6 +19,7 @@ namespace Planar_SLAM {
     Frame::Frame() {}
 
     //Copy Constructor
+    /*
     Frame::Frame(const Frame &frame)
             : mpORBvocabulary(frame.mpORBvocabulary), mpORBextractorLeft(frame.mpORBextractorLeft),
               mpORBextractorRight(frame.mpORBextractorRight),
@@ -50,7 +51,149 @@ namespace Planar_SLAM {
         if (!frame.mTcw.empty())
             SetPose(frame.mTcw);
     }
+*/
 
+    ////zzw
+    //mvDepthLine_zzw
+    Frame::Frame(const Frame &frame)
+            : mpORBvocabulary(frame.mpORBvocabulary), mpORBextractorLeft(frame.mpORBextractorLeft),
+              mpORBextractorRight(frame.mpORBextractorRight),
+              mTimeStamp(frame.mTimeStamp), mK(frame.mK.clone()), mDistCoef(frame.mDistCoef.clone()),
+              mbf(frame.mbf), mb(frame.mb), mThDepth(frame.mThDepth), N(frame.N), mvKeys(frame.mvKeys),
+              mvKeysRight(frame.mvKeysRight), mvKeysUn(frame.mvKeysUn), mvuRight(frame.mvuRight),
+              mvDepth(frame.mvDepth), mBowVec(frame.mBowVec), mFeatVec(frame.mFeatVec),
+              mDescriptors(frame.mDescriptors.clone()), mDescriptorsRight(frame.mDescriptorsRight.clone()),
+              mvpMapPoints(frame.mvpMapPoints), mvbOutlier(frame.mvbOutlier), mnId(frame.mnId),
+              mpReferenceKF(frame.mpReferenceKF), mnScaleLevels(frame.mnScaleLevels),
+              mfScaleFactor(frame.mfScaleFactor), mfLogScaleFactor(frame.mfLogScaleFactor),
+              mvScaleFactors(frame.mvScaleFactors), mvInvScaleFactors(frame.mvInvScaleFactors),
+              mvLevelSigma2(frame.mvLevelSigma2), mvInvLevelSigma2(frame.mvInvLevelSigma2),
+              mLdesc(frame.mLdesc), NL(frame.NL), mvKeylinesUn(frame.mvKeylinesUn),
+              mvpMapLines(frame.mvpMapLines),  mvbLineOutlier(frame.mvbLineOutlier), mvKeyLineFunctions(frame.mvKeyLineFunctions),
+              mvDepthLine_zzw(frame.mvDepthLine_zzw), mvLines3D(frame.mvLines3D), mv3DLineforMap(frame.mv3DLineforMap), dealWithLine(frame.dealWithLine),
+              blurNumber(frame.blurNumber), vSurfaceNormal(frame.vSurfaceNormal),
+              vVanishingDirection(frame.vVanishingDirection), mVF3DLines(frame.mVF3DLines), mvPlaneCoefficients(frame.mvPlaneCoefficients),
+              mbNewPlane(frame.mbNewPlane), mvpMapPlanes(frame.mvpMapPlanes), mnPlaneNum(frame.mnPlaneNum), mvbPlaneOutlier(frame.mvbPlaneOutlier),
+              mvpParallelPlanes(frame.mvpParallelPlanes), mvpVerticalPlanes(frame.mvpVerticalPlanes),
+              vSurfaceNormalx(frame.vSurfaceNormalx), vSurfaceNormaly(frame.vSurfaceNormaly), vSurfaceNormalz(frame.vSurfaceNormalz),
+              vSurfacePointx(frame.vSurfacePointx), vSurfacePointy(frame.vSurfacePointy), vSurfacePointz(frame.vSurfacePointz),
+              vVanishingLinex(frame.vVanishingLinex),vVanishingLiney(frame.vVanishingLiney),vVanishingLinez(frame.vVanishingLinez),
+              mvPlanePoints(frame.mvPlanePoints) {
+        for (int i = 0; i < FRAME_GRID_COLS; i++)
+            for (int j = 0; j < FRAME_GRID_ROWS; j++)
+                mGrid[i][j] = frame.mGrid[i][j];
+
+        if (!frame.mTcw.empty())
+            SetPose(frame.mTcw);
+    }
+
+    Frame::Frame(const cv::Mat &imRGB, const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp,
+                 ORBextractor *extractor, ORBVocabulary *voc, cv::Mat &K, cv::Mat &distCoef, const float &bf,
+                 const float &thDepth, const float &depthMapFactor)
+            : mpORBvocabulary(voc), mpORBextractorLeft(extractor),
+              mpORBextractorRight(static_cast<ORBextractor *>(NULL)),
+              mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth) {
+        // Frame ID
+        mnId = nNextId++;
+
+        // Scale Level Info
+        mnScaleLevels = mpORBextractorLeft->GetLevels();
+        mfScaleFactor = mpORBextractorLeft->GetScaleFactor();
+        mfLogScaleFactor = log(mfScaleFactor);
+        mvScaleFactors = mpORBextractorLeft->GetScaleFactors();
+        mvInvScaleFactors = mpORBextractorLeft->GetInverseScaleFactors();
+        mvLevelSigma2 = mpORBextractorLeft->GetScaleSigmaSquares();
+        mvInvLevelSigma2 = mpORBextractorLeft->GetInverseScaleSigmaSquares();
+
+        fx = K.at<float>(0, 0);
+        fy = K.at<float>(1, 1);
+        cx = K.at<float>(0, 2);
+        cy = K.at<float>(1, 2);
+        invfx = 1.0f / fx;
+        invfy = 1.0f / fy;
+
+        cv::Mat depth;
+        if (depthMapFactor != 1 || imDepth.type() != CV_32F) {
+            //比例缩放 不改变rows和cols
+            //参数alpha可以让数据放缩到指定的范围内，比如从字节到浮点数类型alpha=1.0/255.0时表示从0～255切换到0～1之间alpha=255时表示从0～1切换到0～255之间
+//            *this(x,y)*alpha+beta
+            imDepth.convertTo(depth, CV_32F, depthMapFactor);
+        }
+        ////imDepth = CV_16U  depth=CV_32F
+        cv::Mat tmpK = (cv::Mat_<double>(3, 3) << fx, 0, cx,
+                0, fy, cy,
+                0, 0, 1);
+        dealWithLine = true;
+
+        std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+        ////zzw
+        thread threadLines(&Planar_SLAM::Frame::ExtractLSD_zzw, this, imGray, depth, tmpK);
+        thread threadPoints(&Planar_SLAM::Frame::ExtractORB, this, 0, imGray);
+        thread threadPlanes(&Planar_SLAM::Frame::ComputePlanes, this, depth, imDepth, imRGB, K, depthMapFactor);
+        threadPoints.join();
+        threadLines.join();
+        threadPlanes.join();
+        std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+        double t12= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+        //cout<<"time-frame-feature:" <<t12<<endl;
+        N = mvKeys.size();
+
+        std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
+        double t32= std::chrono::duration_cast<std::chrono::duration<double> >(t3 - t2).count();
+        //cout<<"time-frame-line:" <<t32<<endl;
+        NL = mvKeylinesUn.size();
+
+        if (mvKeys.empty())
+            return;
+
+        GetLineDepth(depth);
+
+        UndistortKeyPoints();
+
+        ComputeStereoFromRGBD(depth);
+
+        mvpMapPoints = vector<MapPoint *>(N, static_cast<MapPoint *>(NULL));
+        mvpMapLines = vector<MapLine *>(NL, static_cast<MapLine *>(NULL));
+        mvbOutlier = vector<bool>(N, false);
+        mvbLineOutlier = vector<bool>(NL, false);
+
+        // This is done only for the first Frame (or after a change in the calibration)
+        if (mbInitialComputations) {
+            ComputeImageBounds(imGray);
+
+            mfGridElementWidthInv = static_cast<float>(FRAME_GRID_COLS) / static_cast<float>(mnMaxX - mnMinX);//=0.1
+            mfGridElementHeightInv = static_cast<float>(FRAME_GRID_ROWS) / static_cast<float>(mnMaxY - mnMinY);//=0.1
+
+            fx = K.at<float>(0, 0);
+            fy = K.at<float>(1, 1);
+            cx = K.at<float>(0, 2);
+            cy = K.at<float>(1, 2);
+            invfx = 1.0f / fx;
+            invfy = 1.0f / fy;
+
+            mbInitialComputations = false;
+        }
+
+        mb = mbf / fx;
+
+        AssignFeaturesToGrid();
+
+        std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
+        double t43= std::chrono::duration_cast<std::chrono::duration<double> >(t4 - t3).count();
+        //cout<<"time-frame-plane:" <<t43<<endl;
+
+        mnPlaneNum = mvPlanePoints.size();
+        mvpMapPlanes = vector<MapPlane *>(mnPlaneNum, static_cast<MapPlane *>(nullptr));
+        mvpParallelPlanes = vector<MapPlane *>(mnPlaneNum, static_cast<MapPlane *>(nullptr));
+        mvpVerticalPlanes = vector<MapPlane *>(mnPlaneNum, static_cast<MapPlane *>(nullptr));
+        mvPlanePointMatches = vector<vector<MapPoint *>>(mnPlaneNum);
+        mvPlaneLineMatches = vector<vector<MapLine *>>(mnPlaneNum);
+        mvbPlaneOutlier = vector<bool>(mnPlaneNum, false);
+        mvbVerPlaneOutlier = vector<bool>(mnPlaneNum, false);
+        mvbParPlaneOutlier = vector<bool>(mnPlaneNum, false);
+    }
+
+/*
     // Extract points,lines and planes by using a multi-thread manner
     Frame::Frame(const cv::Mat &imRGB, const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp,
                  ORBextractor *extractor, ORBVocabulary *voc, cv::Mat &K, cv::Mat &distCoef, const float &bf,
@@ -154,6 +297,7 @@ namespace Planar_SLAM {
         mvbVerPlaneOutlier = vector<bool>(mnPlaneNum, false);
         mvbParPlaneOutlier = vector<bool>(mnPlaneNum, false);
     }
+*/
 
 //  为网格指定关键点以加快特征匹配
     void Frame::AssignFeaturesToGrid() {
@@ -172,6 +316,17 @@ namespace Planar_SLAM {
         }
 //        mGrid中数据为0
 //        cout<<"mGrid size "<<mGrid[0][0].size()<<" mGrid "<<mGrid[0][0].data()<<endl;
+    }
+
+    void Frame::ExtractLSD_zzw(const cv::Mat &im, const cv::Mat &depth,cv::Mat K) {
+        std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+        mpLineSegment->ExtractLineSegment(im, mvKeylinesUn, mLdesc, mvKeyLineFunctions);
+        std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+        double t43= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+//        isLineGood(im, depth, K);
+        std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
+        double t23= std::chrono::duration_cast<std::chrono::duration<double> >(t3 - t2).count();
+
     }
 
     void Frame::ExtractLSD(const cv::Mat &im, const cv::Mat &depth,cv::Mat K) {
@@ -653,6 +808,91 @@ namespace Planar_SLAM {
         return Lines3D;
     }
 
+    //相当于把isLineGood函数放到了这里
+    Vector6d Frame::Obtain3DLine_zzw(const int &i, const cv::Mat &imDepth) {
+        double len = cv::norm(mvKeylinesUn[i].getStartPoint() - mvKeylinesUn[i].getEndPoint());
+
+        vector<cv::Point3d> pts3d;
+        // iterate through a line
+        double numSmp = (double) min((int) len, 100); //number of line points sampled
+
+        pts3d.reserve(numSmp);
+        for (int j = 0; j <= numSmp; ++j) {
+            // use nearest neighbor to querry depth value
+            // assuming position (0,0) is the top-left corner of image, then the
+            // top-left pixel's center would be (0.5,0.5)
+            cv::Point2d pt = mvKeylinesUn[i].getStartPoint() * (1 - j / numSmp) +
+                             mvKeylinesUn[i].getEndPoint() * (j / numSmp);
+            if (pt.x < 0 || pt.y < 0 || pt.x >= imDepth.cols || pt.y >= imDepth.rows) continue;
+            int row, col; // nearest pixel for pt
+            if ((floor(pt.x) == pt.x) && (floor(pt.y) == pt.y)) { // boundary issue
+                col = max(int(pt.x - 1), 0);
+                row = max(int(pt.y - 1), 0);
+            } else {
+                col = int(pt.x);
+                row = int(pt.y);
+            }
+
+            float d = -1;
+            if (imDepth.at<float>(row, col) <= 0.01) { // no depth info
+                continue;
+            } else {
+                d = imDepth.at<float>(row, col);
+            }
+            cv::Point3d p;
+
+            p.z = d;
+            p.x = (col - cx) * p.z * invfx;
+            p.y = (row - cy) * p.z * invfy;
+
+            pts3d.push_back(p);
+
+        }
+        ///static_cast<Vector6d>(NULL)
+        Vector6d test1 ;
+        test1<<0.0,0.0,0.0,0.0,0.0,0.0;
+        if (pts3d.size() < 10.0)
+            return test1;
+//        if (pts3d.size() < 10.0)
+//            return static_cast<Vector6d>(NULL);
+
+        RandomLine3d tmpLine;
+        vector<RandomPoint3d> rndpts3d;
+        rndpts3d.reserve(pts3d.size());
+
+        cv::Mat K = (cv::Mat_<double>(3, 3) << fx, 0, cx,
+                0, fy, cy,
+                0, 0, 1);
+
+        // compute uncertainty of 3d points
+        for (auto &j : pts3d) {
+            rndpts3d.push_back(compPt3dCov(j, K, 1));
+        }
+        // using ransac to extract a 3d line from 3d pts
+        tmpLine = extract3dline_mahdist(rndpts3d);
+
+        if (tmpLine.pts.size() / len > 0.4 && cv::norm(tmpLine.A - tmpLine.B) > 0.02) {
+            //this line is reliable
+
+            Vector6d line3D;
+            line3D << tmpLine.A.x, tmpLine.A.y, tmpLine.A.z, tmpLine.B.x, tmpLine.B.y, tmpLine.B.z;
+
+            cv::Mat Ac = (Mat_<float>(3, 1) << line3D(0), line3D(1), line3D(2));
+            cv::Mat A = mRwc * Ac + mOw;
+            cv::Mat Bc = (Mat_<float>(3, 1) << line3D(3), line3D(4), line3D(5));
+            cv::Mat B = mRwc * Bc + mOw;
+            line3D << A.at<float>(0, 0), A.at<float>(1, 0), A.at<float>(2, 0),
+                    B.at<float>(0, 0), B.at<float>(1, 0), B.at<float>(2, 0);
+            return line3D;
+        } else {
+            ///static_cast<Vector6d>(NULL)
+            Vector6d test ;
+            test<<0.0,0.0,0.0,0.0,0.0,0.0;
+            return test;
+//            return static_cast<Vector6d>(NULL);
+        }
+    }
+
     //imDepth是经过convert转变的，Depth是原本的
     void Frame::ComputePlanes(const cv::Mat &imDepth, const cv::Mat &Depth, const cv::Mat &imRGB, cv::Mat K, float depthMapFactor) {
         planeDetector.readColorImage(imRGB);
@@ -832,6 +1072,15 @@ namespace Planar_SLAM {
         cv::transpose(mTcw, temp);
         cv::Mat b = -mOw.t();
         return temp * mvPlaneCoefficients[idx];
+    }
+
+    void Frame::GetLineDepth(const cv::Mat &imDepth) {
+        mvDepthLine_zzw = std::vector<std::pair<float, float>>(mvKeylinesUn.size(), make_pair(-1.0f, -1.0f));
+
+        for (int i = 0; i < mvKeylinesUn.size(); ++i) {
+            mvDepthLine_zzw[i] = std::make_pair(imDepth.at<float>(mvKeylinesUn[i].startPointY, mvKeylinesUn[i].startPointX),
+                                                imDepth.at<float>(mvKeylinesUn[i].endPointY, mvKeylinesUn[i].endPointX));
+        }
     }
 } //namespace Planar_SLAM
 

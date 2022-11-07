@@ -106,6 +106,7 @@ public:
     cv::Mat mImRGB;
     cv::Mat mImGray;
     cv::Mat mImDepth;
+    cv::Mat mImDepth_CV_32F;
 
     // Initialization Variables (Monocular)
     std::vector<int> mvIniLastMatches;
@@ -148,6 +149,7 @@ protected:
 
     // Map initialization for stereo and RGB-D
     void StereoInitialization();
+    void StereoInitialization_zzw();
 
     // Map initialization for monocular
     void MonocularInitialization();

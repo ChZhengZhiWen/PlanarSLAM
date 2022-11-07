@@ -178,6 +178,9 @@ namespace Planar_SLAM {
                               mDistCoef, mbf, mThDepth, mDepthMapFactor);
         std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
 
+        if (mDepthMapFactor != 1 || mImDepth.type() != CV_32F) {
+            mImDepth.convertTo(mImDepth_CV_32F, CV_32F, mDepthMapFactor);
+        }
 
         ////Track();
         Track_zzw();
@@ -222,10 +225,9 @@ namespace Planar_SLAM {
 
         if (mState == NOT_INITIALIZED) {
             if (mSensor == System::STEREO || mSensor == System::RGBD) {
-
                 Rotation_cm = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
 
-                StereoInitialization();
+                StereoInitialization_zzw();
                 Rotation_cm = mpMap->FindManhattan(mCurrentFrame, mfVerTh, true);
                 //Rotation_cm=SeekManhattanFrame(mCurrentFrame.vSurfaceNormal,mCurrentFrame.mVF3DLines).clone();
                 Rotation_cm = TrackManhattanFrame(Rotation_cm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
@@ -1485,6 +1487,121 @@ namespace Planar_SLAM {
         tempMS.density = denominator / numPoint;
 
         return tempMS;
+    }
+
+    void Tracking::StereoInitialization_zzw() {
+        if (mCurrentFrame.N > 50 || mCurrentFrame.NL > 15) {
+            // Set Frame pose to the origin
+            mCurrentFrame.SetPose(cv::Mat::eye(4, 4, CV_32F));
+
+            // Create KeyFrame
+            // 将当前帧构造为初始关键帧
+            // mCurrentFrame的数据类型为Frame
+            // KeyFrame包含Frame、地图3D点、以及BoW
+            // KeyFrame里有一个mpMap，Tracking里有一个mpMap，而KeyFrame里的mpMap都指向Tracking里的这个mpMap
+            // KeyFrame里有一个mpKeyFrameDB，Tracking里有一个mpKeyFrameDB，而KeyFrame里的mpMap都指向Tracking里的这个mpKeyFrameDB
+            // 提问: 为什么要指向Tracking中的相应的变量呢? -- 因为Tracking是主线程，是它创建和加载的这些模块
+            KeyFrame *pKFini = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB);
+
+            // Insert KeyFrame in the map
+            // KeyFrame中包含了地图、反过来地图中也包含了KeyFrame，相互包含
+            // 在地图中添加该初始关键帧
+            mpMap->AddKeyFrame(pKFini);
+
+            // Create MapPoints and asscoiate to KeyFrame
+            // 为每个特征点构造MapPoint
+            for (int i = 0; i < mCurrentFrame.N; i++) {
+                float z = mCurrentFrame.mvDepth[i];
+                if (z > 0) {
+                    // 通过反投影得到该特征点的世界坐标系下3D坐标
+                    cv::Mat x3D = mCurrentFrame.UnprojectStereo(i);
+                    // 将3D点构造为MapPoint
+                    MapPoint *pNewMP = new MapPoint(x3D, pKFini, mpMap);
+
+                    // 为该MapPoint添加属性：
+                    // a.观测到该MapPoint的关键帧
+                    // b.该MapPoint的描述子
+                    // c.该MapPoint的平均观测方向和深度范围
+
+                    // a.表示该MapPoint可以被哪个KeyFrame的哪个特征点观测到
+                    pNewMP->AddObservation(pKFini, i);
+                    // 表示该KeyFrame的哪个特征点可以观测到哪个3D点
+                    pKFini->AddMapPoint(pNewMP, i);
+                    // b.从众多观测到该MapPoint的特征点中挑选区分度最高的描述子
+                    pNewMP->ComputeDistinctiveDescriptors();
+                    // c.更新该MapPoint平均观测方向以及观测距离的范围
+                    pNewMP->UpdateNormalAndDepth();
+
+                    // 在地图中添加该MapPoint
+                    mpMap->AddMapPoint(pNewMP);
+
+                    // 将该MapPoint添加到当前帧的mvpMapPoints中
+                    // 为当前Frame的特征点与MapPoint之间建立索引
+                    mCurrentFrame.mvpMapPoints[i] = pNewMP;
+                }
+            }
+
+
+            for (int i = 0; i < mCurrentFrame.NL; i++) {
+
+                pair<float, float> z = mCurrentFrame.mvDepthLine_zzw[i];
+
+                if (z.first > 0 && z.second > 0) {
+                    Vector6d line3D = mCurrentFrame.Obtain3DLine_zzw(i, mImDepth_CV_32F);
+                    cout<<"-------------------line3D "<<line3D.transpose()<<endl;
+                    // 将3D线构造为MapPoint
+                    MapLine *pNewML = new MapLine(line3D, pKFini, mpMap);
+                    pNewML->AddObservation(pKFini, i);
+                    pKFini->AddMapLine(pNewML, i);
+                    pNewML->ComputeDistinctiveDescriptors();
+                    pNewML->UpdateAverageDir();
+                    mpMap->AddMapLine(pNewML);
+                    mCurrentFrame.mvpMapLines[i] = pNewML;
+                }
+            }
+
+            for (int i = 0; i < mCurrentFrame.mnPlaneNum; ++i) {
+                cv::Mat p3D = mCurrentFrame.ComputePlaneWorldCoeff(i);
+                MapPlane *pNewMP = new MapPlane(p3D, pKFini, mpMap);
+                pNewMP->AddObservation(pKFini,i);
+                pKFini->AddMapPlane(pNewMP, i);
+                pNewMP->UpdateCoefficientsAndPoints();
+                mpMap->AddMapPlane(pNewMP);
+                mCurrentFrame.mvpMapPlanes[i] = pNewMP;
+                cout<<"i   "<<i<<endl;
+                cout<<"mnPlaneNum   "<<mCurrentFrame.mnPlaneNum<<endl;
+                cout<<"mCurrentFrame.mvpMapPlanes[i] = pNewMP   "<<pNewMP<<endl;
+            }
+
+            mpPointCloudMapping->print();
+
+            // 在局部地图中添加该初始关键帧
+            mpLocalMapper->InsertKeyFrame(pKFini);
+
+            // 更新当前帧为上一帧
+            mLastFrame = Frame(mCurrentFrame);
+            mnLastKeyFrameId = mCurrentFrame.mnId;
+            mpLastKeyFrame = pKFini;
+
+            mvpLocalKeyFrames.push_back(pKFini);
+            mvpLocalMapPoints = mpMap->GetAllMapPoints();
+            mvpLocalMapLines = mpMap->GetAllMapLines();
+
+            mpReferenceKF = pKFini;
+            mCurrentFrame.mpReferenceKF = pKFini;
+
+            // 把当前（最新的）局部MapPoints作为ReferenceMapPoints
+            // ReferenceMapPoints是DrawMapPoints函数画图的时候用的
+            // Lines同理
+            mpMap->SetReferenceMapPoints(mvpLocalMapPoints);
+            mpMap->SetReferenceMapLines(mvpLocalMapLines);
+
+            mpMap->mvpKeyFrameOrigins.push_back(pKFini);
+
+            mpMapDrawer->SetCurrentCameraPose(mCurrentFrame.mTcw);
+
+            mState = OK;
+        }
     }
 
     void Tracking::StereoInitialization() {

@@ -61,8 +61,12 @@ namespace Planar_SLAM
 
         // extract line feature
         void ExtractLSD(const cv::Mat &im, const cv::Mat &depth,cv::Mat K);
+        void ExtractLSD_zzw(const cv::Mat &im, const cv::Mat &depth,cv::Mat K);
 
         void isLineGood(const cv::Mat &imGray,  const cv::Mat &imDepth,cv::Mat K);
+
+        ////zzw
+        void GetLineDepth(const cv::Mat &imDepth);
 
         void lineDescriptorMAD( std::vector<std::vector<cv::DMatch>> matches, double &nn_mad, double &nn12_mad) const;
 
@@ -111,6 +115,7 @@ namespace Planar_SLAM
         // Backprojects a keypoint (if stereo/depth info available) into 3D world coordinates.
         cv::Mat UnprojectStereo(const int &i);
         Vector6d obtain3DLine(const int &i);
+        Vector6d Obtain3DLine_zzw(const int &i, const cv::Mat &imDepth);
         void EstimateSurfaceNormalGradient( const cv::Mat &imDepth, const cv::Mat &imGraphMask,const double &timeStamp,cv::Mat &K);
         void EstimateVanihsingDirection();
 
@@ -170,6 +175,7 @@ namespace Planar_SLAM
         std::vector<float> mvuRight;
         std::vector<float> mvDepth;
         std::vector<float>  mvDepthLine;
+        std::vector<std::pair<float, float>> mvDepthLine_zzw;//两个端点的深度
         // Bag of Words Vector structures.
         DBoW2::BowVector mBowVec;
         DBoW2::FeatureVector mFeatVec;
