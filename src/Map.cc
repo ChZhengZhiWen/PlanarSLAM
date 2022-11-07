@@ -427,4 +427,138 @@ cout<<"Rotation_cm "<<Rotation_cm<<"  FindManhattan()"<<endl;
         return res;
     }
 
+    ///---------------------------------------
+    void Map::AddManhattanObservation(MapPlane *pMP1, MapPlane *pMP2, MapPlane *pMP3, KeyFrame *pKF) {
+        unique_lock<mutex> lock(mMutexMap);
+
+        Manhattan manhattan = std::make_tuple(pMP1, pMP2, pMP3);
+        if (mmpManhattanObservations.count(manhattan) != 0)
+            return;
+        pKF->SetNotErase();
+        mmpManhattanObservations[manhattan] = pKF;
+    }
+
+    KeyFrame *Map::GetManhattanObservation(MapPlane *pMP1, MapPlane *pMP2, MapPlane *pMP3) {
+        unique_lock<mutex> lock(mMutexMap);
+        Manhattan manhattan = std::make_tuple(pMP1, pMP2, pMP3);
+        if (mmpManhattanObservations.count(manhattan)) {
+            return mmpManhattanObservations[manhattan];
+        } else {
+            return static_cast<KeyFrame *>(nullptr);
+        }
+    }
+
+    void Map::AddPartialManhattanObservation(MapPlane *pMP1, MapPlane *pMP2, KeyFrame *pKF) {
+        unique_lock<mutex> lock(mMutexMap);
+
+        PartialManhattan manhattan = std::make_pair(pMP1, pMP2);
+        if (mmpPartialManhattanObservations.count(manhattan) != 0)
+            return;
+        pKF->SetNotErase();
+        mmpPartialManhattanObservations[manhattan] = pKF;
+    }
+
+    KeyFrame *Map::GetPartialManhattanObservation(MapPlane *pMP1, MapPlane *pMP2) {
+        unique_lock<mutex> lock(mMutexMap);
+        PartialManhattan manhattan = std::make_pair(pMP1, pMP2);
+        if (mmpPartialManhattanObservations.count(manhattan)) {
+            return mmpPartialManhattanObservations[manhattan];
+        } else {
+            return static_cast<KeyFrame *>(nullptr);
+        }
+    }
+
+    size_t PartialManhattanMapHash::operator()(const std::pair<MapPlane *, MapPlane *> &key) const {
+        int id1, id2;
+        if (key.first->mnId > key.second->mnId) {
+            id1 = key.second->mnId;
+            id2 = key.first->mnId;
+        } else {
+            id1 = key.first->mnId;
+            id2 = key.second->mnId;
+        }
+
+        size_t hash = 0;
+        hash += (71 * hash + id1) % 5;
+        hash += (71 * hash + id2) % 5;
+        return hash;
+    }
+
+    bool PartialManhattanMapEqual::operator()(const std::pair<MapPlane *, MapPlane *> &a,
+                                              const std::pair<MapPlane *, MapPlane *> &b) const {
+        MapPlane *pMP11, *pMP12, *pMP21, *pMP22;
+        if (a.first->mnId > a.second->mnId) {
+            pMP11 = a.second;
+            pMP12 = a.first;
+        } else {
+            pMP11 = a.first;
+            pMP12 = a.second;
+        }
+
+        if (b.first->mnId > b.second->mnId) {
+            pMP21 = b.second;
+            pMP22 = b.first;
+        } else {
+            pMP21 = b.first;
+            pMP22 = b.second;
+        }
+
+        std::pair<MapPlane *, MapPlane *> p1 = std::make_pair(pMP11, pMP12);
+        std::pair<MapPlane *, MapPlane *> p2 = std::make_pair(pMP21, pMP22);
+
+        return p1 == p2;
+    }
+
+    size_t ManhattanMapHash::operator()(const std::tuple<MapPlane *, MapPlane *, MapPlane *> &key) const {
+        vector<int> ids;
+        ids.push_back(get<0>(key)->mnId);
+        ids.push_back(get<1>(key)->mnId);
+        ids.push_back(get<2>(key)->mnId);
+        sort(ids.begin(), ids.end());
+
+        size_t hash = 0;
+        hash += (71 * hash + ids[0]) % 5;
+        hash += (71 * hash + ids[1]) % 5;
+        hash += (71 * hash + ids[2]) % 5;
+        return hash;
+    }
+
+    bool ManhattanMapEqual::operator()(const std::tuple<MapPlane *, MapPlane *, MapPlane *> &a,
+                                       const std::tuple<MapPlane *, MapPlane *, MapPlane *> &b) const {
+        MapPlane *pMP11, *pMP12, *pMP13, *pMP21, *pMP22, *pMP23;
+
+        pMP11 = get<0>(a);
+        pMP12 = get<1>(a);
+        pMP13 = get<2>(a);
+
+        if (pMP11 > pMP12) {
+            std::swap(pMP11, pMP12);
+        }
+        if (pMP12 > pMP13) {
+            std::swap(pMP12, pMP13);
+        }
+        if (pMP11 > pMP12) {
+            std::swap(pMP11, pMP12);
+        }
+
+        pMP21 = get<0>(b);
+        pMP22 = get<1>(b);
+        pMP23 = get<2>(b);
+
+        if (pMP21 > pMP22) {
+            std::swap(pMP21, pMP22);
+        }
+        if (pMP22 > pMP23) {
+            std::swap(pMP22, pMP23);
+        }
+        if (pMP21 > pMP22) {
+            std::swap(pMP21, pMP22);
+        }
+
+        std::tuple<MapPlane *, MapPlane *, MapPlane *> t1 = std::make_tuple(pMP11, pMP12, pMP13);
+        std::tuple<MapPlane *, MapPlane *, MapPlane *> t2 = std::make_tuple(pMP21, pMP22, pMP23);
+
+        return t1 == t2;
+    }
+
 } //namespace Planar_SLAM

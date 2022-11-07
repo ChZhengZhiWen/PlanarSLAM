@@ -4,6 +4,8 @@
 #include "Optimizer.h"
 
 #include<mutex>
+#include<unistd.h>
+
 
 using namespace std;
 using namespace cv;
@@ -110,6 +112,127 @@ namespace Planar_SLAM {
         return (!mlNewKeyFrames.empty());
     }
 
+    void LocalMapping::ProcessNewKeyFrame_zzw() {
+        {
+            unique_lock<mutex> lock(mMutexNewKFs);
+            mpCurrentKeyFrame = mlNewKeyFrames.front();
+            mlNewKeyFrames.pop_front();
+        }
+
+        // Compute Bags of Words structures
+        mpCurrentKeyFrame->ComputeBoW();
+
+        // Associate MapPoints to the new keyframe and update normal and descriptor
+        const vector<MapPoint *> vpMapPointMatches = mpCurrentKeyFrame->GetMapPointMatches();
+
+        for (size_t i = 0; i < vpMapPointMatches.size(); i++) {
+            MapPoint *pMP = vpMapPointMatches[i];
+            if (pMP) {
+                if (!pMP->isBad()) {
+                    if (!pMP->IsInKeyFrame(mpCurrentKeyFrame)) {
+                        pMP->AddObservation(mpCurrentKeyFrame, i);
+                        pMP->UpdateNormalAndDepth();
+                        pMP->ComputeDistinctiveDescriptors();
+                    } else // this can only happen for new stereo points inserted by the Tracking
+                    {
+                        mlpRecentAddedMapPoints.push_back(pMP);
+                    }
+                }
+            }
+        }
+
+        const vector<MapLine *> vpMapLineMatches = mpCurrentKeyFrame->GetMapLineMatches();
+
+        for (size_t i = 0; i < vpMapLineMatches.size(); i++) {
+            MapLine *pML = vpMapLineMatches[i];
+            if (pML) {
+                if (!pML->isBad()) {
+                    if (!pML->IsInKeyFrame(mpCurrentKeyFrame)) {
+                        pML->AddObservation(mpCurrentKeyFrame, i);
+                        pML->UpdateAverageDir();
+                        pML->ComputeDistinctiveDescriptors();
+                    } else {
+                        mlpRecentAddedMapLines.push_back(pML);
+                    }
+                }
+            }
+        }
+
+        const vector<MapPlane *> vpMapPlaneMatches = mpCurrentKeyFrame->GetMapPlaneMatches();
+
+//        for (size_t i = 0; i < vpMapPlaneMatches.size(); i++) {
+//            MapPlane *pMP = vpMapPlaneMatches[i];
+//            if (pMP && !pMP->isBad() && pMP->mnFirstKFid == mpCurrentKeyFrame->mnId) {
+//                mlpRecentAddedMapPlanes.push_back(pMP);
+//            }
+//        }
+
+        for (size_t i = 0; i < vpMapPlaneMatches.size(); i++) {
+            MapPlane *pMP = vpMapPlaneMatches[i];
+            if (!pMP || pMP->isBad()) {
+                continue;
+            }
+            if (pMP && !pMP->isBad() && pMP->mnFirstKFid == mpCurrentKeyFrame->mnId) {
+                mlpRecentAddedMapPlanes.push_back(pMP);
+            }
+        }
+
+        for (size_t i = 0; i < mpCurrentKeyFrame->mnPlaneNum; i++) {
+            cv::Mat p3Dc1 = mpCurrentKeyFrame->mvPlaneCoefficients[i];
+            MapPlane *pMP1 = mpCurrentKeyFrame->mvpMapPlanes[i];
+
+            if (!pMP1 || pMP1->isBad()) {
+                continue;
+            }
+
+            for (size_t j = i + 1; j < mpCurrentKeyFrame->mnPlaneNum; j++) {
+                cv::Mat p3Dc2 = mpCurrentKeyFrame->mvPlaneCoefficients[j];
+                MapPlane *pMP2 = mpCurrentKeyFrame->mvpMapPlanes[j];
+
+                if (!pMP2 || pMP2->isBad() || pMP2->mnId == pMP1->mnId) {
+                    continue;
+                }
+
+                float angle12 = p3Dc1.at<float>(0) * p3Dc2.at<float>(0) +
+                                p3Dc1.at<float>(1) * p3Dc2.at<float>(1) +
+                                p3Dc1.at<float>(2) * p3Dc2.at<float>(2);
+
+                if (angle12 < mfMFVerTh && angle12 > -mfMFVerTh) {
+                    for (size_t k = j + 1; k < mpCurrentKeyFrame->mnPlaneNum; k++) {
+                        cv::Mat p3Dc3 = mpCurrentKeyFrame->mvPlaneCoefficients[k];
+                        MapPlane *pMP3 = mpCurrentKeyFrame->mvpMapPlanes[k];
+
+                        if (!pMP3 || pMP3->isBad() || pMP3->mnId == pMP1->mnId || pMP3->mnId == pMP2->mnId) {
+                            continue;
+                        }
+
+                        float angle13 = p3Dc1.at<float>(0) * p3Dc3.at<float>(0) +
+                                        p3Dc1.at<float>(1) * p3Dc3.at<float>(1) +
+                                        p3Dc1.at<float>(2) * p3Dc3.at<float>(2);
+
+                        float angle23 = p3Dc2.at<float>(0) * p3Dc3.at<float>(0) +
+                                        p3Dc2.at<float>(1) * p3Dc3.at<float>(1) +
+                                        p3Dc2.at<float>(2) * p3Dc3.at<float>(2);
+
+                        if (angle13 < mfMFVerTh && angle13 > -mfMFVerTh && angle23 < mfMFVerTh &&
+                            angle23 > -mfMFVerTh) {
+                            mpMap->AddManhattanObservation(pMP1, pMP2, pMP3, mpCurrentKeyFrame);
+                        }
+                    }
+
+                    mpMap->AddPartialManhattanObservation(pMP1, pMP2, mpCurrentKeyFrame);
+                }
+            }
+        }
+
+        // Update links in the Covisibility Graph
+        mpCurrentKeyFrame->UpdateConnections();
+
+        // Insert Keyframe in Map
+        mpMap->AddKeyFrame(mpCurrentKeyFrame);
+    }
+
+
     void LocalMapping::ProcessNewKeyFrame() {
         {
             unique_lock<mutex> lock(mMutexNewKFs);
@@ -171,6 +294,7 @@ namespace Planar_SLAM {
         // Insert Keyframe in Map
         mpMap->AddKeyFrame(mpCurrentKeyFrame);
     }
+
 
     void LocalMapping::MapPointCulling() {
         // Check Recent Added MapPoints

@@ -4,6 +4,8 @@
 #include <pangolin/pangolin.h>
 #include <iomanip>
 #include <time.h>
+#include<unistd.h>
+
 
 using namespace std;
 using namespace cv;
@@ -141,11 +143,11 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
 
     cv::Mat Tcw=mpTracker->GrabImageRGBD(im, depthmap, timestamp);
 
-        unique_lock<mutex> lock2(mMutexState);
-    	    mTrackingState = mpTracker->mState;
-        mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;
-        mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;
-        return Tcw;
+    unique_lock<mutex> lock2(mMutexState);
+    mTrackingState = mpTracker->mState;
+    mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;
+    mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;
+    return Tcw;
 }
 
 

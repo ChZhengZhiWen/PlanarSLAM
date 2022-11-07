@@ -29,11 +29,34 @@ namespace Planar_SLAM
     class MapPlane;
     class Frame;
 
+    ///-----------------------------------
+    struct PartialManhattanMapHash {
+        size_t operator()(const std::pair<MapPlane *, MapPlane *> &key) const;
+    };
+
+    struct PartialManhattanMapEqual {
+        bool operator()(const std::pair<MapPlane *, MapPlane *> &a, const std::pair<MapPlane *, MapPlane *> &b) const;
+    };
+
+    struct ManhattanMapHash {
+        size_t operator()(const std::tuple<MapPlane *, MapPlane *, MapPlane *> &key) const;
+    };
+
+    struct ManhattanMapEqual {
+        bool operator()(const std::tuple<MapPlane *, MapPlane *, MapPlane *> &a,
+                        const std::tuple<MapPlane *, MapPlane *, MapPlane *> &b) const;
+    };
+
     class Map
     {
     public:
         typedef pcl::PointXYZRGB PointT;
         typedef pcl::PointCloud <PointT> PointCloud;
+
+        typedef std::pair<MapPlane *, MapPlane *> PartialManhattan;
+        typedef std::tuple<MapPlane *, MapPlane *, MapPlane *> Manhattan;
+        typedef std::unordered_map<PartialManhattan, KeyFrame *, PartialManhattanMapHash, PartialManhattanMapEqual> PartialManhattans;
+        typedef std::unordered_map<Manhattan, KeyFrame *, ManhattanMapHash, ManhattanMapEqual> Manhattans;
 
         Map();
 
@@ -83,6 +106,13 @@ namespace Planar_SLAM
 
         double PointDistanceFromPlane(const cv::Mat& plane, PointCloud::Ptr boundry, bool out = false);
 
+        ///------------------------------------
+        void AddManhattanObservation(MapPlane *pMP1, MapPlane *pMP2, MapPlane *pMP3, KeyFrame *pKF);
+        KeyFrame *GetManhattanObservation(MapPlane *pMP1, MapPlane *pMP2, MapPlane *pMP3);
+
+        void AddPartialManhattanObservation(MapPlane *pMP1, MapPlane *pMP2, KeyFrame *pKF);
+        KeyFrame *GetPartialManhattanObservation(MapPlane *pMP1, MapPlane *pMP2);
+
     protected:
         std::set<MapPoint*> mspMapPoints;
 
@@ -99,6 +129,11 @@ namespace Planar_SLAM
         // Index related to a big change in the map (loop closure, global BA)
         int mnBigChangeIdx;
         std::mutex mMutexMap;
+
+        ///---------------------------------------
+        Manhattans mmpManhattanObservations;
+
+        PartialManhattans mmpPartialManhattanObservations;
     };
 
 } //namespace Planar_SLAM

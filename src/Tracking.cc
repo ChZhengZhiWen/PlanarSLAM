@@ -179,7 +179,8 @@ namespace Planar_SLAM {
         std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
 
 
-        Track();
+        ////Track();
+        Track_zzw();
 
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
         double t12= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
@@ -202,8 +203,7 @@ namespace Planar_SLAM {
         return mCurrentFrame.mTcw.clone();
     }
 
-
-    void Tracking::Track() {
+    void Tracking::Track_zzw() {
 
         if (mState == NO_IMAGES_YET) {
             mState = NOT_INITIALIZED;
@@ -242,33 +242,59 @@ namespace Planar_SLAM {
             bool bOK = false;
             bool bManhattan = false;
             // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
+            // mbOnlyTracking等于false表示正常SLAM模式（定位+地图更新），mbOnlyTracking等于true表示仅定位模式
+            // tracking 类构造时默认为false。有个开关ActivateLocalizationMode，可以控制是否开启mbOnlyTracking
             if (!mbOnlyTracking) {
+                bManhattan = DetectManhattan();
+                if (bManhattan){
+                    char one;
+                    one = getchar();
+                }
+
                 mUpdateMF = true;
                 cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
                 cv::Mat MF_can_T = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
                 MF_can = TrackManhattanFrame(mLastRcm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
-cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
+
+//                cout<<endl<<"MF_can00000000000000000000000000000"<<MF_can<<endl;
+
                 MF_can.copyTo(mLastRcm);//.clone();
                 MF_can_T = MF_can.t();
                 mRotation_wc = Rotation_cm * MF_can_T;
                 mRotation_wc = mRotation_wc.t();
 
+
+
+                //检查并更新上一帧被替换的MapPoints
+                //局部建图线程则可能会对原有的地图点进行替换.在这里进行检查
                 CheckReplacedInLastFrame();
 
+                // 运动模型是空的或刚完成重定位，跟踪参考关键帧；否则恒速模型跟踪
+                // 第一个条件,如果运动模型为空,说明是刚初始化开始，或者已经跟丢了
+                // 第二个条件,如果当前帧紧紧地跟着在重定位的帧的后面，我们将重定位帧来恢复位姿
+                // mnLastRelocFrameId 上一次重定位的那一帧
                 if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2) {
                     bOK = TranslationEstimation();
 
                 } else {
+                    // 用最近的普通帧来跟踪当前的普通帧
+                    // 根据恒速模型设定当前帧的初始位姿
+                    // 通过投影的方式在参考帧中找当前帧特征点的匹配点
+                    // 优化每个特征点所对应3D点的投影误差即可得到位姿
                     bOK = TranslationWithMotionModel();
                     if (!bOK) {
+                        //根据恒速模型失败了，只能根据TranslationEstimation来跟踪
                         bOK = TranslationEstimation();
                     }
                 }
             }
 
+            // 将最新的关键帧作为当前帧的参考关键帧
             mCurrentFrame.mpReferenceKF = mpReferenceKF;
 
             // If we have an initial estimation of the camera pose and matching. Track the local map.
+            // 在跟踪得到当前帧初始姿态后，现在对local map进行跟踪得到更多的匹配，并优化当前位姿
+            // 前面只是跟踪一帧得到初始位姿，这里搜索局部关键帧、局部地图点，和当前帧进行投影匹配，得到更多匹配的MapPoints后进行Pose优化
             if (!mbOnlyTracking) {
                 if (bOK) {
                     bOK = TrackLocalMap();
@@ -309,16 +335,20 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
             // If tracking were good, check if we insert a keyframe
             if (bOK) {
                 // Update motion model
+                //跟踪成功，更新恒速运动模型
                 if (!mLastFrame.mTcw.empty()) {
                     cv::Mat LastTwc = cv::Mat::eye(4, 4, CV_32F);
                     mLastFrame.GetRotationInverse().copyTo(LastTwc.rowRange(0, 3).colRange(0, 3));
                     mLastFrame.GetCameraCenter().copyTo(LastTwc.rowRange(0, 3).col(3));
+                    // mVelocity = Tcl = Tcw * Twl,表示上一帧到当前帧的变换， 其中 Twl = LastTwc
                     mVelocity = mCurrentFrame.mTcw * LastTwc;
                 } else
                     mVelocity = cv::Mat();
 
+                //更新显示中的位姿
                 mpMapDrawer->SetCurrentCameraPose(mCurrentFrame.mTcw);
                 // Clean VO matches
+                //清除观测不到的地图点
                 for (int i = 0; i < mCurrentFrame.N; i++) {
                     MapPoint *pMP = mCurrentFrame.mvpMapPoints[i];
                     if (pMP)
@@ -359,6 +389,9 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
                 }
 
                 // Delete temporal MapPoints
+                // 清除恒速模型跟踪中 UpdateLastFrame中为当前帧临时添加的MapPoints（仅双目和rgbd）
+                // Clean VO matches 只是在当前帧中将这些MapPoints剔除，这里从MapPoints数据库中删除
+                // 临时地图点仅仅是为了提高双目或rgbd摄像头的帧间跟踪效果，用完以后就扔了，没有添加到地图中
                 for (list<MapPoint *>::iterator lit = mlpTemporalPoints.begin(), lend = mlpTemporalPoints.end();
                      lit != lend; lit++) {
                     MapPoint *pMP = *lit;
@@ -369,6 +402,8 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
                     MapLine *pML = *lit;
                     delete pML;
                 }
+                // 这里不仅仅是清除mlpTemporalPoints，通过delete pMP还删除了指针指向的MapPoint
+                // 不能够直接执行这个是因为其中存储的都是指针,之前的操作都是为了避免内存泄露
                 mlpTemporalPoints.clear();
                 mlpTemporalLines.clear();
 
@@ -376,6 +411,7 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
 
 
                 // Check if we need to insert a new keyframe
+                // 检测并插入关键帧，对于双目或RGB-D会产生新的地图点
                 if (NeedNewKeyFrame()) {
                     CreateNewKeyFrame();
                 }
@@ -389,7 +425,11 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
                 // pass to the new keyframe, so that bundle adjustment will finally decide
                 // if they are outliers or not. We don't want next frame to estimate its position
                 // with those points so we discard them in the frame.
+                // 作者这里说允许在BA中被Huber核函数判断为外点的传入新的关键帧中，让后续的BA来审判他们是不是真正的外点
+                // 但是估计下一帧位姿的时候我们不想用这些外点，所以删掉
+                // 删除那些在bundle adjustment中检测为outlier的地图点
                 for (int i = 0; i < mCurrentFrame.N; i++) {
+                    // 这里第一个条件还要执行判断是因为, 前面的操作中可能删除了其中的地图点
                     if (mCurrentFrame.mvpMapPoints[i] && mCurrentFrame.mvbOutlier[i])
                         mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
                 }
@@ -401,6 +441,7 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
             }
 
             // Reset if the camera get lost soon after initialization
+            // 如果初始化后不久就跟踪失败，并且relocation也没有搞定，只能重新Reset
             if (mState == LOST) {
                 if (mpMap->KeyFramesInMap() <= 5) {
                     mpSystem->Reset();
@@ -408,9 +449,11 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
                 }
             }
 
+            //确保已经设置了参考关键帧
             if (!mCurrentFrame.mpReferenceKF)
                 mCurrentFrame.mpReferenceKF = mpReferenceKF;
 
+            // 保存上一帧的数据,当前帧变上一帧
             mLastFrame = Frame(mCurrentFrame);
         }
 
@@ -421,6 +464,7 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
         trackTime = ttrack_12 - ttrack_34;
 
         // Store frame pose information to retrieve the complete camera trajectory afterwards.
+        // 记录位姿信息，用于最后保存所有的轨迹
         if (!mCurrentFrame.mTcw.empty()) {
             cv::Mat Tcr = mCurrentFrame.mTcw * mCurrentFrame.mpReferenceKF->GetPoseInverse();
             mlRelativeFramePoses.push_back(Tcr);
@@ -429,6 +473,286 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
             mlbLost.push_back(mState == LOST);
         } else {
             // This can happen if tracking is lost
+            // 如果跟踪失败，则相对位姿使用上一次值
+            mlRelativeFramePoses.push_back(mlRelativeFramePoses.back());
+            mlpReferences.push_back(mlpReferences.back());
+            mlFrameTimes.push_back(mlFrameTimes.back());
+            mlbLost.push_back(mState == LOST);
+        }
+
+    }
+
+    void Tracking::Track() {
+
+        if (mState == NO_IMAGES_YET) {
+            mState = NOT_INITIALIZED;
+        }
+
+        double ttrack_12 = 0.0;
+        double ttrack_34 = 0.0;
+        trackTime = 0.0;
+        std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+
+        mLastProcessedState = mState;
+
+        // Get Map Mutex -> Map cannot be changed
+        //当有效时,lock锁管理模板类管理锁对象，周期结束后自动解锁 ，意思为锁住地图更新
+        unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
+
+        if (mState == NOT_INITIALIZED) {
+            if (mSensor == System::STEREO || mSensor == System::RGBD) {
+                Rotation_cm = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
+
+                StereoInitialization();
+                Rotation_cm = mpMap->FindManhattan(mCurrentFrame, mfVerTh, true);
+                //Rotation_cm=SeekManhattanFrame(mCurrentFrame.vSurfaceNormal,mCurrentFrame.mVF3DLines).clone();
+                Rotation_cm = TrackManhattanFrame(Rotation_cm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
+                mLastRcm = Rotation_cm.clone();
+
+            } else
+                MonocularInitialization();
+            //更新帧绘制器中存储的最新状态
+            mpFrameDrawer->Update(this);
+
+            if (mState != OK)
+                return;
+        } else {
+            //Tracking: system is initialized
+            bool bOK = false;
+            bool bManhattan = false;
+            // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
+            // mbOnlyTracking等于false表示正常SLAM模式（定位+地图更新），mbOnlyTracking等于true表示仅定位模式
+            // tracking 类构造时默认为false。有个开关ActivateLocalizationMode，可以控制是否开启mbOnlyTracking
+            if (!mbOnlyTracking) {
+                bManhattan = DetectManhattan();
+                if (bManhattan){
+                    char one;
+                    one = getchar();
+                }
+
+                mUpdateMF = true;
+                cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
+                cv::Mat MF_can_T = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
+                MF_can = TrackManhattanFrame(mLastRcm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
+
+//                cout<<endl<<"MF_can00000000000000000000000000000"<<MF_can<<endl;
+
+                MF_can.copyTo(mLastRcm);//.clone();
+                MF_can_T = MF_can.t();
+                mRotation_wc = Rotation_cm * MF_can_T;
+                mRotation_wc = mRotation_wc.t();
+
+
+
+                //检查并更新上一帧被替换的MapPoints
+                //局部建图线程则可能会对原有的地图点进行替换.在这里进行检查
+                CheckReplacedInLastFrame();
+
+                // 运动模型是空的或刚完成重定位，跟踪参考关键帧；否则恒速模型跟踪
+                // 第一个条件,如果运动模型为空,说明是刚初始化开始，或者已经跟丢了
+                // 第二个条件,如果当前帧紧紧地跟着在重定位的帧的后面，我们将重定位帧来恢复位姿
+                // mnLastRelocFrameId 上一次重定位的那一帧
+                if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2) {
+                    bOK = TranslationEstimation();
+
+                } else {
+                    // 用最近的普通帧来跟踪当前的普通帧
+                    // 根据恒速模型设定当前帧的初始位姿
+                    // 通过投影的方式在参考帧中找当前帧特征点的匹配点
+                    // 优化每个特征点所对应3D点的投影误差即可得到位姿
+                    bOK = TranslationWithMotionModel();
+                    if (!bOK) {
+                        //根据恒速模型失败了，只能根据TranslationEstimation来跟踪
+                        bOK = TranslationEstimation();
+                    }
+                }
+            }
+
+            // 将最新的关键帧作为当前帧的参考关键帧
+            mCurrentFrame.mpReferenceKF = mpReferenceKF;
+
+            // If we have an initial estimation of the camera pose and matching. Track the local map.
+            // 在跟踪得到当前帧初始姿态后，现在对local map进行跟踪得到更多的匹配，并优化当前位姿
+            // 前面只是跟踪一帧得到初始位姿，这里搜索局部关键帧、局部地图点，和当前帧进行投影匹配，得到更多匹配的MapPoints后进行Pose优化
+            if (!mbOnlyTracking) {
+                if (bOK) {
+                    bOK = TrackLocalMap();
+                } else {
+                    bOK = Relocalization();
+                }
+            }
+
+            // update rotation from manhattan
+            cv::Mat new_Rotation_wc = mCurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3).t();
+            cv::Mat Rotation_mc = Rotation_cm.t();
+            cv::Mat MF_can_T;
+            MF_can_T = Rotation_mc * new_Rotation_wc;
+            mLastRcm = MF_can_T.t();
+
+            if (bOK)
+                mState = OK;
+            else
+                mState = LOST;
+
+            // Update drawer
+            mpFrameDrawer->Update(this);
+
+            mpMap->FlagMatchedPlanePoints(mCurrentFrame, mfDThRef);
+
+            //Update Planes
+            for (int i = 0; i < mCurrentFrame.mnPlaneNum; ++i) {
+                MapPlane *pMP = mCurrentFrame.mvpMapPlanes[i];
+                if (pMP) {
+                    pMP->UpdateCoefficientsAndPoints(mCurrentFrame, i);
+                } else if (!mCurrentFrame.mvbPlaneOutlier[i]) {
+                    mCurrentFrame.mbNewPlane = true;
+                }
+            }
+
+            mpPointCloudMapping->print();
+
+            // If tracking were good, check if we insert a keyframe
+            if (bOK) {
+                // Update motion model
+                //跟踪成功，更新恒速运动模型
+                if (!mLastFrame.mTcw.empty()) {
+                    cv::Mat LastTwc = cv::Mat::eye(4, 4, CV_32F);
+                    mLastFrame.GetRotationInverse().copyTo(LastTwc.rowRange(0, 3).colRange(0, 3));
+                    mLastFrame.GetCameraCenter().copyTo(LastTwc.rowRange(0, 3).col(3));
+                    // mVelocity = Tcl = Tcw * Twl,表示上一帧到当前帧的变换， 其中 Twl = LastTwc
+                    mVelocity = mCurrentFrame.mTcw * LastTwc;
+                } else
+                    mVelocity = cv::Mat();
+
+                //更新显示中的位姿
+                mpMapDrawer->SetCurrentCameraPose(mCurrentFrame.mTcw);
+                // Clean VO matches
+                //清除观测不到的地图点
+                for (int i = 0; i < mCurrentFrame.N; i++) {
+                    MapPoint *pMP = mCurrentFrame.mvpMapPoints[i];
+                    if (pMP)
+                        if (pMP->Observations() < 1) {
+                            mCurrentFrame.mvbOutlier[i] = false;
+                            mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
+                        }
+                }
+                for (int i = 0; i < mCurrentFrame.NL; i++) {
+                    MapLine *pML = mCurrentFrame.mvpMapLines[i];
+                    if (pML)
+                        if (pML->Observations() < 1) {
+                            mCurrentFrame.mvbLineOutlier[i] = false;
+                            mCurrentFrame.mvpMapLines[i] = static_cast<MapLine *>(NULL);
+                        }
+                }
+                for (int i = 0; i < mCurrentFrame.mnPlaneNum; i++) {
+                    MapPlane *pMP = mCurrentFrame.mvpMapPlanes[i];
+                    if (pMP)
+                        if (pMP->Observations() < 1) {
+                            mCurrentFrame.mvbPlaneOutlier[i] = false;
+                            mCurrentFrame.mvpMapPlanes[i] = static_cast<MapPlane *>(NULL);
+                        }
+
+                    MapPlane *pVMP = mCurrentFrame.mvpVerticalPlanes[i];
+                    if (pVMP)
+                        if (pVMP->Observations() < 1) {
+                            mCurrentFrame.mvbVerPlaneOutlier[i] = false;
+                            mCurrentFrame.mvpVerticalPlanes[i] = static_cast<MapPlane *>(NULL);
+                        }
+
+                    MapPlane *pPMP = mCurrentFrame.mvpParallelPlanes[i];
+                    if (pVMP)
+                        if (pVMP->Observations() < 1) {
+                            mCurrentFrame.mvbParPlaneOutlier[i] = false;
+                            mCurrentFrame.mvpParallelPlanes[i] = static_cast<MapPlane *>(NULL);
+                        }
+                }
+
+                // Delete temporal MapPoints
+                // 清除恒速模型跟踪中 UpdateLastFrame中为当前帧临时添加的MapPoints（仅双目和rgbd）
+                // Clean VO matches 只是在当前帧中将这些MapPoints剔除，这里从MapPoints数据库中删除
+                // 临时地图点仅仅是为了提高双目或rgbd摄像头的帧间跟踪效果，用完以后就扔了，没有添加到地图中
+                for (list<MapPoint *>::iterator lit = mlpTemporalPoints.begin(), lend = mlpTemporalPoints.end();
+                     lit != lend; lit++) {
+                    MapPoint *pMP = *lit;
+                    delete pMP;
+                }
+                for (list<MapLine *>::iterator lit = mlpTemporalLines.begin(), lend = mlpTemporalLines.end();
+                     lit != lend; lit++) {
+                    MapLine *pML = *lit;
+                    delete pML;
+                }
+                // 这里不仅仅是清除mlpTemporalPoints，通过delete pMP还删除了指针指向的MapPoint
+                // 不能够直接执行这个是因为其中存储的都是指针,之前的操作都是为了避免内存泄露
+                mlpTemporalPoints.clear();
+                mlpTemporalLines.clear();
+
+                std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
+
+
+                // Check if we need to insert a new keyframe
+                // 检测并插入关键帧，对于双目或RGB-D会产生新的地图点
+                if (NeedNewKeyFrame()) {
+                    CreateNewKeyFrame();
+                }
+
+                std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
+
+                ttrack_34= std::chrono::duration_cast<std::chrono::duration<double> >(t4 - t3).count();
+
+
+                // We allow points with high innovation (considererd outliers by the Huber Function)
+                // pass to the new keyframe, so that bundle adjustment will finally decide
+                // if they are outliers or not. We don't want next frame to estimate its position
+                // with those points so we discard them in the frame.
+                // 作者这里说允许在BA中被Huber核函数判断为外点的传入新的关键帧中，让后续的BA来审判他们是不是真正的外点
+                // 但是估计下一帧位姿的时候我们不想用这些外点，所以删掉
+                // 删除那些在bundle adjustment中检测为outlier的地图点
+                for (int i = 0; i < mCurrentFrame.N; i++) {
+                    // 这里第一个条件还要执行判断是因为, 前面的操作中可能删除了其中的地图点
+                    if (mCurrentFrame.mvpMapPoints[i] && mCurrentFrame.mvbOutlier[i])
+                        mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
+                }
+
+                for (int i = 0; i < mCurrentFrame.NL; i++) {
+                    if (mCurrentFrame.mvpMapLines[i] && mCurrentFrame.mvbLineOutlier[i])
+                        mCurrentFrame.mvpMapLines[i] = static_cast<MapLine *>(NULL);
+                }
+            }
+
+            // Reset if the camera get lost soon after initialization
+            // 如果初始化后不久就跟踪失败，并且relocation也没有搞定，只能重新Reset
+            if (mState == LOST) {
+                if (mpMap->KeyFramesInMap() <= 5) {
+                    mpSystem->Reset();
+                    return;
+                }
+            }
+
+            //确保已经设置了参考关键帧
+            if (!mCurrentFrame.mpReferenceKF)
+                mCurrentFrame.mpReferenceKF = mpReferenceKF;
+
+            // 保存上一帧的数据,当前帧变上一帧
+            mLastFrame = Frame(mCurrentFrame);
+        }
+
+        std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+
+        ttrack_12= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+
+        trackTime = ttrack_12 - ttrack_34;
+
+        // Store frame pose information to retrieve the complete camera trajectory afterwards.
+        // 记录位姿信息，用于最后保存所有的轨迹
+        if (!mCurrentFrame.mTcw.empty()) {
+            cv::Mat Tcr = mCurrentFrame.mTcw * mCurrentFrame.mpReferenceKF->GetPoseInverse();
+            mlRelativeFramePoses.push_back(Tcr);
+            mlpReferences.push_back(mpReferenceKF);
+            mlFrameTimes.push_back(mCurrentFrame.mTimeStamp);
+            mlbLost.push_back(mState == LOST);
+        } else {
+            // This can happen if tracking is lost
+            // 如果跟踪失败，则相对位姿使用上一次值
             mlRelativeFramePoses.push_back(mlRelativeFramePoses.back());
             mlpReferences.push_back(mlpReferences.back());
             mlFrameTimes.push_back(mlFrameTimes.back());
@@ -1240,6 +1564,9 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
                 pNewMP->UpdateCoefficientsAndPoints();
                 mpMap->AddMapPlane(pNewMP);
                 mCurrentFrame.mvpMapPlanes[i] = pNewMP;
+cout<<"i   "<<i<<endl;
+cout<<"mnPlaneNum   "<<mCurrentFrame.mnPlaneNum<<endl;
+cout<<"mCurrentFrame.mvpMapPlanes[i] = pNewMP   "<<pNewMP<<endl;
             }
 
             mpPointCloudMapping->print();
@@ -1659,6 +1986,203 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
         }
     }
 
+    bool Tracking::DetectManhattan() {
+        KeyFrame *pKFCandidate = nullptr;
+        int maxScore = 0;
+        cv::Mat pMFc1, pMFc2, pMFc3, pMFm1, pMFm2, pMFm3;
+        fullManhattanFound = false;
+
+        int id1, id2, id3 = -1;
+
+        for (size_t i = 0; i < mCurrentFrame.mnPlaneNum; i++) {
+            cv::Mat p3Dc1 = mCurrentFrame.mvPlaneCoefficients[i];
+            MapPlane *pMP1 = mCurrentFrame.mvpMapPlanes[i];
+cout<<"i "<<i<<endl;
+cout<<"pMP1 "<<pMP1<<endl;
+cout<<"mCurrentFrame.mvpMapPlanes[i] "<<mCurrentFrame.mvpMapPlanes[0]<<endl;
+            if (!pMP1 || pMP1->isBad()) {
+                continue;
+            }
+
+            for (size_t j = i + 1; j < mCurrentFrame.mnPlaneNum; j++) {
+                cv::Mat p3Dc2 = mCurrentFrame.mvPlaneCoefficients[j];
+                MapPlane *pMP2 = mCurrentFrame.mvpMapPlanes[j];
+
+                if (!pMP2 || pMP2->isBad()) {
+                    continue;
+                }
+
+                float angle12 = p3Dc1.at<float>(0) * p3Dc2.at<float>(0) +
+                                p3Dc1.at<float>(1) * p3Dc2.at<float>(1) +
+                                p3Dc1.at<float>(2) * p3Dc2.at<float>(2);
+
+                if (angle12 > mfMFVerTh || angle12 < -mfMFVerTh) {
+                    continue;
+                }
+
+                for (size_t k = j + 1; k < mCurrentFrame.mnPlaneNum; k++) {
+                    cv::Mat p3Dc3 = mCurrentFrame.mvPlaneCoefficients[k];
+                    MapPlane *pMP3 = mCurrentFrame.mvpMapPlanes[k];
+
+                    if (!pMP3 || pMP3->isBad()) {
+                        continue;
+                    }
+
+                    float angle13 = p3Dc1.at<float>(0) * p3Dc3.at<float>(0) +
+                                    p3Dc1.at<float>(1) * p3Dc3.at<float>(1) +
+                                    p3Dc1.at<float>(2) * p3Dc3.at<float>(2);
+
+                    float angle23 = p3Dc2.at<float>(0) * p3Dc3.at<float>(0) +
+                                    p3Dc2.at<float>(1) * p3Dc3.at<float>(1) +
+                                    p3Dc2.at<float>(2) * p3Dc3.at<float>(2);
+
+                    if (angle13 > mfMFVerTh || angle13 < -mfMFVerTh || angle23 > mfMFVerTh || angle23 < -mfMFVerTh) {
+                        continue;
+                    }
+
+                    KeyFrame *pKF = mpMap->GetManhattanObservation(pMP1, pMP2, pMP3);
+
+                    if (!pKF) {
+                        continue;
+                    }
+
+                    auto idx1 = pMP1->GetIndexInKeyFrame(pKF);
+                    auto idx2 = pMP2->GetIndexInKeyFrame(pKF);
+                    auto idx3 = pMP3->GetIndexInKeyFrame(pKF);
+
+                    if (idx1 == -1 || idx2 == -1 || idx3 == -1) {
+                        continue;
+                    }
+
+                    int score = pKF->mvPlanePoints[idx1].size() +
+                                pKF->mvPlanePoints[idx2].size() +
+                                pKF->mvPlanePoints[idx3].size() +
+                                mCurrentFrame.mvPlanePoints[i].size() +
+                                mCurrentFrame.mvPlanePoints[j].size() +
+                                mCurrentFrame.mvPlanePoints[k].size();
+
+                    if (score > maxScore) {
+                        maxScore = score;
+
+                        pKFCandidate = pKF;
+                        pMFc1 = p3Dc1;
+                        pMFc2 = p3Dc2;
+                        pMFc3 = p3Dc3;
+                        pMFm1 = pKF->mvPlaneCoefficients[idx1];
+                        pMFm2 = pKF->mvPlaneCoefficients[idx2];
+                        pMFm3 = pKF->mvPlaneCoefficients[idx3];
+
+                        id1 = pMP1->mnId;
+                        id2 = pMP2->mnId;
+                        id3 = pMP3->mnId;
+
+                        fullManhattanFound = true;
+                    }
+                }
+
+                KeyFrame *pKF = mpMap->GetPartialManhattanObservation(pMP1, pMP2);
+
+                if (!pKF) {
+                    continue;
+                }
+
+                auto idx1 = pMP1->GetIndexInKeyFrame(pKF);
+                auto idx2 = pMP2->GetIndexInKeyFrame(pKF);
+
+                if (idx1 == -1 || idx2 == -1) {
+                    continue;
+                }
+
+                int score = pKF->mvPlanePoints[idx1].size() +
+                            pKF->mvPlanePoints[idx2].size() +
+                            mCurrentFrame.mvPlanePoints[i].size() +
+                            mCurrentFrame.mvPlanePoints[j].size();
+
+                if (score > maxScore) {
+                    maxScore = score;
+
+                    pKFCandidate = pKF;
+                    pMFc1 = p3Dc1;
+                    pMFc2 = p3Dc2;
+                    pMFm1 = pKF->mvPlaneCoefficients[idx1];
+                    pMFm2 = pKF->mvPlaneCoefficients[idx2];
+
+                    id1 = pMP1->mnId;
+                    id2 = pMP2->mnId;
+
+                    fullManhattanFound = false;
+                }
+            }
+        }
+
+        if (pKFCandidate == nullptr) {
+            return false;
+        }
+
+        if (!fullManhattanFound) {
+            cv::Mat pMFc1n = (cv::Mat_<float>(3, 1) << pMFc1.at<float>(0), pMFc1.at<float>(1), pMFc1.at<float>(2));
+            cv::Mat pMFc2n = (cv::Mat_<float>(3, 1) << pMFc2.at<float>(0), pMFc2.at<float>(1), pMFc2.at<float>(2));
+            pMFc3 = pMFc1n.cross(pMFc2n);
+
+            cv::Mat pMFm1n = (cv::Mat_<float>(3, 1) << pMFm1.at<float>(0), pMFm1.at<float>(1), pMFm1.at<float>(2));
+            cv::Mat pMFm2n = (cv::Mat_<float>(3, 1) << pMFm2.at<float>(0), pMFm2.at<float>(1), pMFm2.at<float>(2));
+            pMFm3 = pMFm1n.cross(pMFm2n);
+        }
+
+        cv::Mat MFc, MFm;
+        MFc = cv::Mat::eye(cv::Size(3, 3), CV_32F);
+        MFm = cv::Mat::eye(cv::Size(3, 3), CV_32F);
+
+        MFc.at<float>(0, 0) = pMFc1.at<float>(0);
+        MFc.at<float>(1, 0) = pMFc1.at<float>(1);
+        MFc.at<float>(2, 0) = pMFc1.at<float>(2);
+        MFc.at<float>(0, 1) = pMFc2.at<float>(0);
+        MFc.at<float>(1, 1) = pMFc2.at<float>(1);
+        MFc.at<float>(2, 1) = pMFc2.at<float>(2);
+        MFc.at<float>(0, 2) = pMFc3.at<float>(0);
+        MFc.at<float>(1, 2) = pMFc3.at<float>(1);
+        MFc.at<float>(2, 2) = pMFc3.at<float>(2);
+
+        if (!fullManhattanFound && std::abs(cv::determinant(MFc) + 1) < 0.5) {
+            MFc.at<float>(0, 2) = -pMFc3.at<float>(0);
+            MFc.at<float>(1, 2) = -pMFc3.at<float>(1);
+            MFc.at<float>(2, 2) = -pMFc3.at<float>(2);
+        }
+
+        cv::Mat Uc, Wc, VTc;
+
+        cv::SVD::compute(MFc, Wc, Uc, VTc);
+
+        MFc = Uc * VTc;
+
+        MFm.at<float>(0, 0) = pMFm1.at<float>(0);
+        MFm.at<float>(1, 0) = pMFm1.at<float>(1);
+        MFm.at<float>(2, 0) = pMFm1.at<float>(2);
+        MFm.at<float>(0, 1) = pMFm2.at<float>(0);
+        MFm.at<float>(1, 1) = pMFm2.at<float>(1);
+        MFm.at<float>(2, 1) = pMFm2.at<float>(2);
+        MFm.at<float>(0, 2) = pMFm3.at<float>(0);
+        MFm.at<float>(1, 2) = pMFm3.at<float>(1);
+        MFm.at<float>(2, 2) = pMFm3.at<float>(2);
+
+        if (!fullManhattanFound && std::abs(cv::determinant(MFm) + 1) < 0.5) {
+            MFm.at<float>(0, 2) = -pMFm3.at<float>(0);
+            MFm.at<float>(1, 2) = -pMFm3.at<float>(1);
+            MFm.at<float>(2, 2) = -pMFm3.at<float>(2);
+        }
+
+        cv::Mat Um, Wm, VTm;
+
+        cv::SVD::compute(MFm, Wm, Um, VTm);
+
+        MFm = Um * VTm;
+
+        cv::Mat Rwc = pKFCandidate->GetPoseInverse().rowRange(0, 3).colRange(0, 3) * MFm * MFc.t();
+        manhattanRcw = Rwc.t();
+
+        return true;
+    }
+
     bool Tracking::TranslationEstimation() {
 
         // Compute Bag of Words vector
@@ -1782,6 +2306,14 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
         return true;
     }
 
+/**
+* @brief 根据恒定速度模型用上一帧地图点来对当前帧进行跟踪。在正常情况下，系统使用恒速模型进行跟踪当前帧。该函数是用上一帧来跟踪当前帧。
+* Step 1：更新上一帧的位姿；对于双目或RGB-D相机，还会根据深度值生成临时地图点
+* Step 2：根据上一帧特征点对应地图点进行投影匹配
+* Step 3：优化当前帧位姿
+* Step 4：剔除地图点中外点
+* @return
+*/
     bool Tracking::TranslationWithMotionModel() {
         ORBmatcher matcher(0.9, true);
         LSDmatcher lmatcher;
@@ -1789,22 +2321,29 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
 
         // Update last frame pose according to its reference keyframe
         // Create "visual odometry" points if in Localization Mode
+        //更新上一帧的位姿；对于双目或RGB-D相机，还会根据深度值生成临时地图点
         UpdateLastFrame();
 
+//        根据之前估计的速度，用恒速模型得到当前帧的初始位姿。
         mCurrentFrame.SetPose(mVelocity * mLastFrame.mTcw);
 
         // Project points seen in previous frame
+        // 设置特征匹配过程中的搜索半径
         int th;
         if (mSensor != System::STEREO)
-            th = 15;
+            th = 15;//单目
         else
-            th = 7;
+            th = 7;//双目
+
+        // 清空当前帧的地图点
         fill(mCurrentFrame.mvpMapPoints.begin(), mCurrentFrame.mvpMapPoints.end(), static_cast<MapPoint *>(NULL));
+//        用上一帧地图点进行投影匹配，如果匹配点不够，则扩大搜索半径再来一次
         int nmatches = matcher.SearchByProjection(mCurrentFrame, mLastFrame, th, mSensor == System::MONOCULAR);
         vector<MapLine *> vpMapLineMatches;
         int lmatches = lmatcher.SearchByDescriptor(mpReferenceKF, mCurrentFrame, vpMapLineMatches);
         mCurrentFrame.mvpMapLines = vpMapLineMatches;
 
+        // 如果匹配点太少，则扩大搜索半径再来一次
         if (nmatches <50) {
             fill(mCurrentFrame.mvpMapPoints.begin(), mCurrentFrame.mvpMapPoints.end(), static_cast<MapPoint *>(NULL));
             nmatches = matcher.MatchORBPoints(mCurrentFrame, mLastFrame);
@@ -1887,6 +2426,7 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
         }
 
         if (mbOnlyTracking) {
+            // 纯定位模式下：如果成功追踪的地图点非常少,那么这里的mbVO标志就会置位
             mbVO = nmatchesMap < 10;
             return nmatches > 20;
         }
@@ -1904,15 +2444,29 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
         return true;
     }
 
+/**
+ * @brief 更新上一帧位姿，在上一帧中生成临时地图点
+ * 单目情况：只计算了上一帧的世界坐标系位姿
+ * 双目和rgbd情况：选取有有深度值的并且没有被选为地图点的点生成新的临时地图点，提高跟踪鲁棒性
+ */
     void Tracking::UpdateLastFrame() {
         // Update pose according to reference keyframe
+        // 利用参考关键帧更新上一帧在世界坐标系下的位姿
+        // 上一普通帧的参考关键帧，注意这里用的是参考关键帧（位姿准）而不是上上一帧的普通帧
         KeyFrame *pRef = mLastFrame.mpReferenceKF;
         cv::Mat Tlr = mlRelativeFramePoses.back();
 
+        // 将上一帧的世界坐标系下的位姿计算出来
+        // l:last, r:reference, w:world
+        // Tlw = Tlr*Trw
         mLastFrame.SetPose(Tlr * pRef->GetPose());
 
+        // 如果上一帧为关键帧，或者单目的情况，以及不是定位模式时则退出
         if (mnLastKeyFrameId == mLastFrame.mnId || mSensor == System::MONOCULAR || !mbOnlyTracking)
             return;
+
+//        对于双目或rgbd相机，为上一帧生成新的临时地图点
+        // 注意这些地图点只是用来跟踪，不加入到地图中，跟踪完后会删除
 
         // Create "visual odometry" MapPoints
         // We sort points according to their measured depth by the stereo/RGB-D sensor
@@ -1997,6 +2551,21 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
 
     }
 
+/**
+ * @brief 用局部地图进行跟踪，进一步优化位姿
+ *
+ * 1. 更新局部地图，包括局部关键帧和关键点
+ * 2. 对局部MapPoints进行投影匹配
+ * 3. 根据匹配对估计当前帧的姿态
+ * 4. 根据姿态剔除误匹配
+ * @return true if success
+ *
+ * Step 1：更新局部关键帧mvpLocalKeyFrames和局部地图点mvpLocalMapPoints
+ * Step 2：在局部地图中查找与当前帧匹配的MapPoints, 其实也就是对局部地图点进行跟踪
+ * Step 3：更新局部所有MapPoints后对位姿再次优化
+ * Step 4：更新当前帧的MapPoints被观测程度，并统计跟踪局部地图的效果
+ * Step 5：决定是否跟踪成功
+ */
     bool Tracking::TrackLocalMap()  {
         PlaneMatcher pmatcher(mfDThRef, mfAThRef, mfVerTh, mfParTh);
 
@@ -2597,7 +3166,21 @@ cout<<"MF_can************++++++++++++++++++++++    "<<MF_can<<endl;
         }
     }
 
+/**
+ * @details 重定位过程
+ * @return true
+ * @return false
+ *
+ * Step 1：计算当前帧特征点的词袋向量
+ * Step 2：找到与当前帧相似的候选关键帧
+ * Step 3：通过BoW进行匹配
+ * Step 4：通过EPnP算法估计姿态
+ * Step 5：通过PoseOptimization对姿态进行优化求解
+ * Step 6：如果内点较少，则通过投影的方式对之前未匹配的点进行匹配，再进行优化求解
+ */
     bool Tracking::Relocalization() {
+char oneStep;
+oneStep = getchar();
         cout << "Tracking:localization" << endl;
         // Compute Bag of Words Vector
         mCurrentFrame.ComputeBoW();

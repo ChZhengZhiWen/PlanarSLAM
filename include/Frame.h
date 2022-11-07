@@ -76,6 +76,11 @@ namespace Planar_SLAM
         void UpdatePoseMatrices();
 
         // Returns the camera center.
+        /**
+         * @brief 返回位于当前帧位姿时,相机的中心
+         *
+         * @return cv::Mat 相机中心在世界坐标系下的3D点坐标
+         */
         inline cv::Mat GetCameraCenter(){
             return mOw.clone();
         }
@@ -244,6 +249,7 @@ namespace Planar_SLAM
         std::vector<MapPlane*> mvpMapPlanes;
         std::vector<MapPlane*> mvpParallelPlanes;
         std::vector<MapPlane*> mvpVerticalPlanes;
+        ////mSLAM没有mvPlanePointMatches mvPlaneLineMatches
         std::vector<std::vector<MapPoint*>> mvPlanePointMatches;
         std::vector<std::vector<MapLine*>> mvPlaneLineMatches;
         // Flag to identify outlier planes new planes.

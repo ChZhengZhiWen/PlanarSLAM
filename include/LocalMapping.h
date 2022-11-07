@@ -57,6 +57,7 @@ namespace Planar_SLAM
 
         bool CheckNewKeyFrames();
         void ProcessNewKeyFrame();
+        void ProcessNewKeyFrame_zzw();
         void CreateNewMapPoints();
         void CreateNewMapLines1();
         void CreateNewMapLines2();
@@ -111,6 +112,9 @@ namespace Planar_SLAM
 
         bool mbAcceptKeyFrames;
         std::mutex mMutexAccept;
+
+        ///---------------------------------
+        float mfMFVerTh = 0.01;//应该放配置文件中的
     };
 
 } //namespace Planar_SLAM

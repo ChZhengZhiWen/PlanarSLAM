@@ -84,6 +84,7 @@ namespace Planar_SLAM {
 //            *this(x,y)*alpha+beta
             imDepth.convertTo(depth, CV_32F, depthMapFactor);
         }
+        ////imDepth = CV_16U  depth=CV_32F
         cv::Mat tmpK = (cv::Mat_<double>(3, 3) << fx, 0, cx,
                 0, fy, cy,
                 0, 0, 1);
@@ -157,9 +158,6 @@ namespace Planar_SLAM {
 //  为网格指定关键点以加快特征匹配
     void Frame::AssignFeaturesToGrid() {
         int nReserve = 0.5f * N / (FRAME_GRID_COLS * FRAME_GRID_ROWS);
-//        cout<<"N "<<N<<endl;
-        cout<<"nReserve "<<nReserve<<endl;
-        cout<<"nReserve1 "<<0.5f * N / (FRAME_GRID_COLS * FRAME_GRID_ROWS)<<endl;
 
         for (unsigned int i = 0; i < FRAME_GRID_COLS; i++)
             for (unsigned int j = 0; j < FRAME_GRID_ROWS; j++)

@@ -4,4 +4,7 @@
 Feature_plp.txt
 total_plp.txt
 Track_plp.txt
+CameraTrajectory.txt
+KeyFrameTrajectory.txt
+MeshMap.ply
 /Vocabulary/ORBvoc.txt

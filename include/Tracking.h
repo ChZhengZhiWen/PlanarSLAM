@@ -144,6 +144,7 @@ protected:
 
     // Main tracking function. It is independent of the input sensor.
     void Track();
+    void Track_zzw();
 
     // Map initialization for stereo and RGB-D
     void StereoInitialization();
@@ -160,6 +161,8 @@ protected:
     bool TranslationEstimation();
     bool TranslationWithMotionModel();
     bool Relocalization();
+
+    bool DetectManhattan();
 
     void UpdateLocalMap();
     void UpdateLocalPoints();
@@ -261,6 +264,11 @@ protected:
 
     int manhattanCount;
     int fullManhattanCount;
+
+    ///-----------------------------------------
+    bool fullManhattanFound;
+    float mfMFVerTh = 0.01;//原本应该放在配置文件中，这里为了方便直接赋值了
+    cv::Mat manhattanRcw;
 
 };
 
