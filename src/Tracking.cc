@@ -222,6 +222,7 @@ namespace Planar_SLAM {
 
         if (mState == NOT_INITIALIZED) {
             if (mSensor == System::STEREO || mSensor == System::RGBD) {
+
                 Rotation_cm = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
 
                 StereoInitialization();
