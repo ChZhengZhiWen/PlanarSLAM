@@ -8,3 +8,5 @@ CameraTrajectory.txt
 KeyFrameTrajectory.txt
 MeshMap.ply
 /Vocabulary/ORBvoc.txt
+/lib
+/Examples/RGB-D/Planar_SLAM

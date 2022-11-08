@@ -52,7 +52,6 @@ namespace Planar_SLAM {
             SetPose(frame.mTcw);
     }
 */
-
     ////zzw
     //mvDepthLine_zzw
     Frame::Frame(const Frame &frame)
@@ -70,7 +69,7 @@ namespace Planar_SLAM {
               mvLevelSigma2(frame.mvLevelSigma2), mvInvLevelSigma2(frame.mvInvLevelSigma2),
               mLdesc(frame.mLdesc), NL(frame.NL), mvKeylinesUn(frame.mvKeylinesUn),
               mvpMapLines(frame.mvpMapLines),  mvbLineOutlier(frame.mvbLineOutlier), mvKeyLineFunctions(frame.mvKeyLineFunctions),
-              mvDepthLine_zzw(frame.mvDepthLine_zzw), mvLines3D(frame.mvLines3D), mv3DLineforMap(frame.mv3DLineforMap), dealWithLine(frame.dealWithLine),
+              mvDepthLine(frame.mvDepthLine), mvLines3D(frame.mvLines3D), mv3DLineforMap(frame.mv3DLineforMap), dealWithLine(frame.dealWithLine),
               blurNumber(frame.blurNumber), vSurfaceNormal(frame.vSurfaceNormal),
               vVanishingDirection(frame.vVanishingDirection), mVF3DLines(frame.mVF3DLines), mvPlaneCoefficients(frame.mvPlaneCoefficients),
               mbNewPlane(frame.mbNewPlane), mvpMapPlanes(frame.mvpMapPlanes), mnPlaneNum(frame.mnPlaneNum), mvbPlaneOutlier(frame.mvbPlaneOutlier),
@@ -78,7 +77,7 @@ namespace Planar_SLAM {
               vSurfaceNormalx(frame.vSurfaceNormalx), vSurfaceNormaly(frame.vSurfaceNormaly), vSurfaceNormalz(frame.vSurfaceNormalz),
               vSurfacePointx(frame.vSurfacePointx), vSurfacePointy(frame.vSurfacePointy), vSurfacePointz(frame.vSurfacePointz),
               vVanishingLinex(frame.vVanishingLinex),vVanishingLiney(frame.vVanishingLiney),vVanishingLinez(frame.vVanishingLinez),
-              mvPlanePoints(frame.mvPlanePoints) {
+              mvPlanePoints(frame.mvPlanePoints),mvDepthLine_zzw(frame.mvDepthLine_zzw) {
         for (int i = 0; i < FRAME_GRID_COLS; i++)
             for (int j = 0; j < FRAME_GRID_ROWS; j++)
                 mGrid[i][j] = frame.mGrid[i][j];
@@ -323,7 +322,7 @@ namespace Planar_SLAM {
         mpLineSegment->ExtractLineSegment(im, mvKeylinesUn, mLdesc, mvKeyLineFunctions);
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
         double t43= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
-//        isLineGood(im, depth, K);
+        isLineGood(im, depth, K);
         std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
         double t23= std::chrono::duration_cast<std::chrono::duration<double> >(t3 - t2).count();
 
