@@ -27,6 +27,79 @@ namespace Planar_SLAM {
         mpTracker = pTracker;
     }
 
+    void LocalMapping::Run_zzw() {
+
+        mbFinished = false;
+
+        while (1) {
+            // Tracking will see that Local Mapping is busy
+            SetAcceptKeyFrames(false);
+            // Check if there are keyframes in the queue
+            if (CheckNewKeyFrames()) {
+                // BoW conversion and insertion in Map
+                // VI-A keyframe insertion
+                ProcessNewKeyFrame_zzw();
+
+                // Check recent MapPoints
+                // VI-B recent map points culling
+                thread threadCullPoint(&LocalMapping::MapPointCulling, this);
+                thread threadCullLine(&LocalMapping::MapLineCulling, this);
+                thread threadCullPlane(&LocalMapping::MapPlaneCulling, this);
+                threadCullPoint.join();
+                threadCullLine.join();
+                threadCullPlane.join();
+
+                // Triangulate new MapPoints
+                // VI-C new map points creation
+
+                thread threadCreateP(&LocalMapping::CreateNewMapPoints, this);
+                thread threadCreateL(&LocalMapping::CreateNewMapLines2, this);
+                threadCreateP.join();
+                threadCreateL.join();
+
+                if (!CheckNewKeyFrames()) {
+                    // Find more matches in neighbor keyframes and fuse point duplications
+                    SearchInNeighbors();
+                }
+
+                mbAbortBA = false;
+
+                if (!CheckNewKeyFrames() && !stopRequested()) {
+                    // VI-D Local BA
+                    if (mpMap->KeyFramesInMap() > 2) {
+                        //Optimizer::LocalBundleAdjustment(mpCurrentKeyFrame, &mbAbortBA, mpMap);
+                    }
+
+
+                    // Check redundant local Keyframes
+                    // VI-E local keyframes culling
+                    KeyFrameCulling();
+                }
+
+                mpLoopCloser->InsertKeyFrame(mpCurrentKeyFrame);
+            } else if (Stop()) {
+                // Safe area to stop
+                while (isStopped() && !CheckFinish()) {
+                    usleep(3000);
+                }
+                if (CheckFinish())
+                    break;
+            }
+
+            ResetIfRequested();
+
+            // Tracking will see that Local Mapping is busy
+            SetAcceptKeyFrames(true);
+
+            if (CheckFinish())
+                break;
+
+            usleep(3000);
+        }
+
+        SetFinish();
+    }
+
     void LocalMapping::Run() {
 
         mbFinished = false;
@@ -113,6 +186,7 @@ namespace Planar_SLAM {
     }
 
     void LocalMapping::ProcessNewKeyFrame_zzw() {
+        int a = 0;
         {
             unique_lock<mutex> lock(mMutexNewKFs);
             mpCurrentKeyFrame = mlNewKeyFrames.front();

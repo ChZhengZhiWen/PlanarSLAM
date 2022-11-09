@@ -72,7 +72,9 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
     //Initialize the Local Mapping thread and launch
     mpLocalMapper = new LocalMapping(mpMap, mSensor==MONOCULAR);
-    mptLocalMapping = new thread(&Planar_SLAM::LocalMapping::Run, mpLocalMapper);
+    ////zzw
+//    mptLocalMapping = new thread(&Planar_SLAM::LocalMapping::Run, mpLocalMapper);
+    mptLocalMapping = new thread(&Planar_SLAM::LocalMapping::Run_zzw, mpLocalMapper);
 
     //Initialize the Loop Closing thread and launch
     mpLoopCloser = new LoopClosing(mpMap, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR);

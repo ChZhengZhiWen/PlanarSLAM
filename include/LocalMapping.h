@@ -29,6 +29,7 @@ namespace Planar_SLAM
 
         // Main function
         void Run();
+        void Run_zzw();
 
         void InsertKeyFrame(KeyFrame* pKF);
 

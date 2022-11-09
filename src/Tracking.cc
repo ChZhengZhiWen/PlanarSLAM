@@ -55,12 +55,10 @@ namespace Planar_SLAM {
         int img_width = fSettings["Camera.width"];
         int img_height = fSettings["Camera.height"];
 
-        cout << "img_width = " << img_width << endl<< "img_height = " << img_height << endl;
-
         initUndistortRectifyMap(mK, mDistCoef, Mat_<double>::eye(3, 3), mK, Size(img_width, img_height), CV_32F,
                                 mUndistX, mUndistY);
 
-        cout << "mUndistX size = " << mUndistX.size << "mUndistY size = " << mUndistY.size << endl;
+        cout << "mUndistX size = " << mUndistX.size << " mUndistY size = " << mUndistY.size << endl;
 
         mbf = fSettings["Camera.bf"];
 
@@ -240,19 +238,29 @@ namespace Planar_SLAM {
 
             if (mState != OK)
                 return;
-        } else {
+        }
+        else {
             //Tracking: system is initialized
             bool bOK = false;
             bool bManhattan = false;
+
             // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
             // mbOnlyTracking等于false表示正常SLAM模式（定位+地图更新），mbOnlyTracking等于true表示仅定位模式
             // tracking 类构造时默认为false。有个开关ActivateLocalizationMode，可以控制是否开启mbOnlyTracking
             if (!mbOnlyTracking) {
-                bManhattan = DetectManhattan();
-                if (bManhattan){
-                    char one;
-                    one = getchar();
+                PlaneMatcher pmatcher(mfDThRef, mfAThRef, mfVerTh, mfParTh);
+                if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2) {
+                    mCurrentFrame.SetPose(mLastFrame.mTcw);
+                } else {
+                    mCurrentFrame.SetPose(mVelocity * mLastFrame.mTcw);
                 }
+                pmatcher.SearchMapByCoefficients(mCurrentFrame, mpMap->GetAllMapPlanes());
+                bManhattan = DetectManhattan();
+//                if (!bManhattan){
+//                    char one;
+//                    one = getchar();
+//                }
+cout<<endl<<bManhattan<<endl;
 
                 mUpdateMF = true;
                 cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
@@ -527,12 +535,6 @@ namespace Planar_SLAM {
             // mbOnlyTracking等于false表示正常SLAM模式（定位+地图更新），mbOnlyTracking等于true表示仅定位模式
             // tracking 类构造时默认为false。有个开关ActivateLocalizationMode，可以控制是否开启mbOnlyTracking
             if (!mbOnlyTracking) {
-                bManhattan = DetectManhattan();
-                if (bManhattan){
-                    char one;
-                    one = getchar();
-                }
-
                 mUpdateMF = true;
                 cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
                 cv::Mat MF_can_T = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
@@ -1548,7 +1550,15 @@ namespace Planar_SLAM {
 
                 if (z.first > 0 && z.second > 0) {
                     Vector6d line3D = mCurrentFrame.Obtain3DLine_zzw(i, mImDepth_CV_32F);
-                    cout<<"-------------------line3D "<<line3D.transpose()<<endl;
+                    Vector6d test ;
+                    test<<0.0,0.0,0.0,0.0,0.0,0.0;
+                    if (line3D.isApprox(test, 1e-5)){
+                        continue;
+                    }
+//                    if (line3D == static_cast<Vector6d>(NULL)) {
+//                        continue;
+//                    }
+
                     // 将3D线构造为MapPoint
                     MapLine *pNewML = new MapLine(line3D, pKFini, mpMap);
                     pNewML->AddObservation(pKFini, i);
@@ -1568,9 +1578,6 @@ namespace Planar_SLAM {
                 pNewMP->UpdateCoefficientsAndPoints();
                 mpMap->AddMapPlane(pNewMP);
                 mCurrentFrame.mvpMapPlanes[i] = pNewMP;
-                cout<<"i   "<<i<<endl;
-                cout<<"mnPlaneNum   "<<mCurrentFrame.mnPlaneNum<<endl;
-                cout<<"mCurrentFrame.mvpMapPlanes[i] = pNewMP   "<<pNewMP<<endl;
             }
 
             mpPointCloudMapping->print();
@@ -2103,7 +2110,8 @@ cout<<"mCurrentFrame.mvpMapPlanes[i] = pNewMP   "<<pNewMP<<endl;
             }
         }
     }
-
+#pragma GCC push_options
+#pragma GCC optimize("O0")
     bool Tracking::DetectManhattan() {
         KeyFrame *pKFCandidate = nullptr;
         int maxScore = 0;
@@ -2111,13 +2119,10 @@ cout<<"mCurrentFrame.mvpMapPlanes[i] = pNewMP   "<<pNewMP<<endl;
         fullManhattanFound = false;
 
         int id1, id2, id3 = -1;
-
+//cout<<endl<<endl<<"mnPlaneNum  "<<mCurrentFrame.mnPlaneNum<<endl;
         for (size_t i = 0; i < mCurrentFrame.mnPlaneNum; i++) {
             cv::Mat p3Dc1 = mCurrentFrame.mvPlaneCoefficients[i];
             MapPlane *pMP1 = mCurrentFrame.mvpMapPlanes[i];
-cout<<"i "<<i<<endl;
-cout<<"pMP1 "<<pMP1<<endl;
-cout<<"mCurrentFrame.mvpMapPlanes[i] "<<mCurrentFrame.mvpMapPlanes[0]<<endl;
             if (!pMP1 || pMP1->isBad()) {
                 continue;
             }
@@ -2133,7 +2138,8 @@ cout<<"mCurrentFrame.mvpMapPlanes[i] "<<mCurrentFrame.mvpMapPlanes[0]<<endl;
                 float angle12 = p3Dc1.at<float>(0) * p3Dc2.at<float>(0) +
                                 p3Dc1.at<float>(1) * p3Dc2.at<float>(1) +
                                 p3Dc1.at<float>(2) * p3Dc2.at<float>(2);
-
+//cout<<"j:"<<j<<"  angle12="<<angle12<<endl;
+//cout<<"mfMFVerTh="<<mfMFVerTh<<endl;
                 if (angle12 > mfMFVerTh || angle12 < -mfMFVerTh) {
                     continue;
                 }
@@ -2153,7 +2159,8 @@ cout<<"mCurrentFrame.mvpMapPlanes[i] "<<mCurrentFrame.mvpMapPlanes[0]<<endl;
                     float angle23 = p3Dc2.at<float>(0) * p3Dc3.at<float>(0) +
                                     p3Dc2.at<float>(1) * p3Dc3.at<float>(1) +
                                     p3Dc2.at<float>(2) * p3Dc3.at<float>(2);
-
+//cout<<"k:"<<k<<"  angle13="<<angle13<<endl;
+//cout<<"k:"<<k<<"  angle23="<<angle23<<endl;
                     if (angle13 > mfMFVerTh || angle13 < -mfMFVerTh || angle23 > mfMFVerTh || angle23 < -mfMFVerTh) {
                         continue;
                     }
@@ -2300,7 +2307,7 @@ cout<<"mCurrentFrame.mvpMapPlanes[i] "<<mCurrentFrame.mvpMapPlanes[0]<<endl;
 
         return true;
     }
-
+#pragma GCC pop_options
     bool Tracking::TranslationEstimation() {
 
         // Compute Bag of Words vector

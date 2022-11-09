@@ -94,8 +94,8 @@ int main(int argc, char **argv)
         if(ttrack<T)
             usleep((T-ttrack)*1e5);
 
-        char oneStep;
-        oneStep = getchar();
+//        char oneStep;
+//        oneStep = getchar();
     }
     char bStop;
 

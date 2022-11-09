@@ -10,3 +10,5 @@ MeshMap.ply
 /Vocabulary/ORBvoc.txt
 /lib
 /Examples/RGB-D/Planar_SLAM
+run.sh
+/mesh

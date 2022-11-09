@@ -54,6 +54,11 @@ namespace Planar_SLAM {
 */
     ////zzw
     //mvDepthLine_zzw
+    //mvLines3D mv3DLineforMap dealWithLine blurNumber vSurfaceNormal vVanishingDirection mVF3DLines
+    //vSurfaceNormalx vSurfaceNormaly vSurfaceNormalz vSurfacePointx vSurfacePointy vSurfacePointz
+    //vVanishingLinex vVanishingLiney vVanishingLinez 这些是pslam独有
+    //mfDisTh是mslam独有
+    //mvDepthLine两个的定义不同，单独添加了mvDepthLine_zzw来区别
     Frame::Frame(const Frame &frame)
             : mpORBvocabulary(frame.mpORBvocabulary), mpORBextractorLeft(frame.mpORBextractorLeft),
               mpORBextractorRight(frame.mpORBextractorRight),
@@ -116,9 +121,9 @@ namespace Planar_SLAM {
             //比例缩放 不改变rows和cols
             //参数alpha可以让数据放缩到指定的范围内，比如从字节到浮点数类型alpha=1.0/255.0时表示从0～255切换到0～1之间alpha=255时表示从0～1切换到0～255之间
 //            *this(x,y)*alpha+beta
+////imDepth = CV_16U  depth=CV_32F
             imDepth.convertTo(depth, CV_32F, depthMapFactor);
         }
-        ////imDepth = CV_16U  depth=CV_32F
         cv::Mat tmpK = (cv::Mat_<double>(3, 3) << fx, 0, cx,
                 0, fy, cy,
                 0, 0, 1);
@@ -1069,7 +1074,7 @@ namespace Planar_SLAM {
         cv::Mat temp;
         //正交矩阵的转置等于逆
         cv::transpose(mTcw, temp);
-        cv::Mat b = -mOw.t();
+//        cv::Mat b = -mOw.t();
         return temp * mvPlaneCoefficients[idx];
     }
 
