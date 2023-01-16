@@ -186,7 +186,7 @@ namespace Planar_SLAM {
     }
 
     void LocalMapping::ProcessNewKeyFrame_zzw() {
-        int a = 0;
+//cout<<"ProcessNewKeyFrame_zzw"<<endl;
         {
             unique_lock<mutex> lock(mMutexNewKFs);
             mpCurrentKeyFrame = mlNewKeyFrames.front();
@@ -290,10 +290,11 @@ namespace Planar_SLAM {
 
                         if (angle13 < mfMFVerTh && angle13 > -mfMFVerTh && angle23 < mfMFVerTh &&
                             angle23 > -mfMFVerTh) {
+//cout<<"AddManhattanObservation "<<endl<<endl;
                             mpMap->AddManhattanObservation(pMP1, pMP2, pMP3, mpCurrentKeyFrame);
                         }
                     }
-
+//cout<<"AddPartialManhattanObservation "<<endl<<endl;
                     mpMap->AddPartialManhattanObservation(pMP1, pMP2, mpCurrentKeyFrame);
                 }
             }

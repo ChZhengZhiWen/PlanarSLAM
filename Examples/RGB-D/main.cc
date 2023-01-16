@@ -52,6 +52,9 @@ int main(int argc, char **argv)
     cv::Mat imRGB, imD;
     for(int ni=0; ni<nImages; ni++)
     {
+//        if(ni == 300)
+//            break;
+        cout<<"===================================================================="<<endl;
         cout<<"PlanarSLAM Printer: This is the "<<ni<<"th image"<<endl;
         // a RGB-D pair
         imRGB = cv::imread(string(argv[3])+"/"+vstrImageFilenamesRGB[ni],CV_LOAD_IMAGE_UNCHANGED);
@@ -94,16 +97,10 @@ int main(int argc, char **argv)
         if(ttrack<T)
             usleep((T-ttrack)*1e5);
 
-//        char oneStep;
-//        oneStep = getchar();
+//        getchar();
     }
     char bStop;
 
-//    cerr << "PlanarSLAM Printer: Please type 'x', if you want to shutdown windows." << endl;
-//
-//    while (bStop != 'x'){
-//        bStop = getchar();
-//    }
     // Stop all threads
     SLAM.Shutdown();
 
@@ -122,6 +119,7 @@ int main(int argc, char **argv)
     SLAM.SaveTrajectoryTUM("CameraTrajectory.txt");
     SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
     SLAM.SaveMesh("MeshMap.ply");
+    SLAM.SaveTrajectoryMRotation("TrajectoryMRotation.txt","SparseAlignmentTcw.txt");
 
     return 0;
 }

@@ -28,7 +28,7 @@
 
 namespace Planar_SLAM
 {
-
+    class Frame;
 class ExtractorNode
 {
 public:
@@ -60,6 +60,11 @@ public:
       std::vector<cv::KeyPoint>& keypoints,
       cv::OutputArray descriptors);
 
+    void operator()(
+            Frame *frame,
+            std::vector<cv::KeyPoint> &_keypoints,
+            cv::OutputArray _descriptors);
+
     int inline GetLevels(){
         return nlevels;}
 
@@ -83,6 +88,8 @@ public:
     }
 
     std::vector<cv::Mat> mvImagePyramid;
+
+    void ComputePyramid_zzw(cv::Mat image);
 
 protected:
 

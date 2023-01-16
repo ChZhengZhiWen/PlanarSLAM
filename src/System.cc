@@ -256,6 +256,52 @@ void System::SaveTrajectoryTUM(const string &filename)
     cout << endl << "trajectory saved!" << endl;
 }
 
+void System::SaveTrajectoryMRotation(const string &filename,const string &filename1)
+{
+
+    ofstream f;
+    f.open(filename.c_str());
+    f << fixed;
+    cv::Mat tem;
+    list<bool>::iterator lbI = mpTracker->ifFindM.begin();
+    int i = 0;
+    for(list<cv::Mat>::iterator lit=mpTracker->mRotation_wx_list.begin(),
+                lend=mpTracker->mRotation_wx_list.end();lit!=lend;lit++,i++,lbI++)
+    {
+        tem = *lit;
+        vector<float> q = Converter::toQuaternion(tem.t());
+
+//        Eigen::Quaterniond quaternion(q[3],q[0],q[1],q[2]);
+//        Eigen::Vector3d eulerAngle=quaternion.matrix().eulerAngles(2,1,0);
+//        f << setprecision(9)<< i << "  "  << eulerAngle[0] << " " << eulerAngle[1] << " " << eulerAngle[2] << " " << endl;
+        f << setprecision(9)<< i << "  " <<"["<<*lbI<<"] " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << endl;
+
+    }
+    f.close();
+
+    ofstream f1;
+    f1.open(filename1.c_str());
+    f1 << fixed;
+    cv::Mat tem1;
+    lbI = mpTracker->ifFindM.begin();
+    i = 0;
+    for(list<cv::Mat>::iterator lit1=mpTracker->SparseAlignmentTcw.begin(),
+                lend1=mpTracker->SparseAlignmentTcw.end();lit1!=lend1;lit1++,i++,lbI++)
+    {
+        tem1 = *lit1;
+        cv::Mat Rwc = tem1.rowRange(0,3).colRange(0,3).t();
+        cv::Mat twc = -Rwc*tem1.rowRange(0,3).col(3);
+        vector<float> q = Converter::toQuaternion(Rwc);
+
+//        Eigen::Quaterniond quaternion(q[3],q[0],q[1],q[2]);
+//        Eigen::Vector3d eulerAngle=quaternion.matrix().eulerAngles(2,1,0);
+//        f1 << setprecision(9)<< i << "  "  << eulerAngle[0] << " " << eulerAngle[1] << " " << eulerAngle[2] << " | " << twc.at<float>(0) << " " << twc.at<float>(1) << " " << twc.at<float>(2) << endl;
+        f1 << setprecision(9)<< i << "  " <<"["<<*lbI<<"] " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << " | " << twc.at<float>(0) << " " << twc.at<float>(1) << " " << twc.at<float>(2) << endl;
+    }
+    f1.close();
+
+    cout << endl << "trajectory saved!" << endl;
+}
 
 void System::SaveKeyFrameTrajectoryTUM(const string &filename)
 {

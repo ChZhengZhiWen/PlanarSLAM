@@ -51,7 +51,7 @@ namespace Planar_SLAM
 
         glPointSize(mPointSize);
         glBegin(GL_POINTS);
-        glColor3f(0.0,0.0,0.0);     //红色
+        glColor3f(1.0,0.0,0.0);     //红色
 
         for(set<MapPoint*>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
         {

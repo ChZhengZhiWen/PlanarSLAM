@@ -61,6 +61,7 @@
 #include <vector>
 
 #include "ORBextractor.h"
+#include "Frame.h"
 
 
 using namespace cv;
@@ -1104,6 +1105,86 @@ void ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPo
     }
 }
 
+void ORBextractor::operator()(Frame *frame,std::vector<cv::KeyPoint> &_keypoints,cv::OutputArray _descriptors) {
+    //leftEye default true
+//    if (leftEye == false)
+//        ComputePyramid(frame->mImRight);
+//    else
+    mvImagePyramid = frame->mvImagePyramid_zzw;
+
+    vector<vector<KeyPoint> > allKeypoints;
+
+    // 注意这里keypoints的坐标还没有乘scale
+
+    ComputeKeyPointsOctTree(allKeypoints);
+
+
+    Mat descriptors;
+
+    int nkeypoints = 0;
+    for (int level = 0; level < nlevels; ++level)
+        nkeypoints += (int) allKeypoints[level].size();
+    nkeypoints += _keypoints.size();
+
+    if (nkeypoints == 0)
+        _descriptors.release();
+    else {
+        _descriptors.create(nkeypoints, 32, CV_8U);
+        descriptors = _descriptors.getMat();
+    }
+
+    _keypoints.reserve(nkeypoints);
+    // the existing ones
+    vector<cv::Mat> pyramid_blured;
+    pyramid_blured.resize(nlevels);
+    for (int i = 0; i < nlevels; i++) {
+        pyramid_blured[i] = mvImagePyramid[i].clone();
+        GaussianBlur(pyramid_blured[i], pyramid_blured[i], Size(7, 7), 2, 2, BORDER_REFLECT_101);
+    }
+
+    int offset = 0;
+
+
+    offset = frame->N;
+    // compute the descriptors of existing features
+    for (int i = 0; i < frame->N; i++) {
+        frame->mvKeys[i].angle = frame->mvKeys[i].angle;
+        Mat desc = descriptors.rowRange(i, i + 1);
+        cv::KeyPoint tmp = frame->mvKeys[i];  // 在align的时候用的是原始坐标
+        tmp.pt *= mvInvScaleFactor[tmp.octave];
+        std::vector<cv::KeyPoint> vkp{tmp};
+        computeDescriptors(pyramid_blured[tmp.octave], vkp, desc, pattern);
+    }
+
+
+    // the new ones
+    for (int level = 0; level < nlevels; ++level) {
+        vector<KeyPoint> &keypoints = allKeypoints[level];
+        int nkeypointsLevel = (int) keypoints.size();
+
+        if (nkeypointsLevel == 0)
+            continue;
+
+        // Compute the descriptors
+        Mat desc = descriptors.rowRange(offset, offset + nkeypointsLevel);
+        // LOG(INFO)<<"computing for level "<<level<<endl;
+        computeDescriptors(pyramid_blured[level], keypoints, desc, pattern);
+
+        offset += nkeypointsLevel;
+
+        // Scale keypoint coordinates
+        if (level != 0) {
+            float scale = mvScaleFactor[level]; //getScale(level, firstLevel, scaleFactor);
+            for (vector<KeyPoint>::iterator keypoint = keypoints.begin(),
+                         keypointEnd = keypoints.end(); keypoint != keypointEnd; ++keypoint)
+                keypoint->pt *= scale;
+        }
+        // And add the keypoints to the output
+        _keypoints.insert(_keypoints.end(), keypoints.begin(), keypoints.end());
+    }
+
+}
+
 void ORBextractor::ComputePyramid(cv::Mat image)
 {
     for (int level = 0; level < nlevels; ++level)
@@ -1126,6 +1207,33 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         {
             copyMakeBorder(image, temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
                            BORDER_REFLECT_101);            
+        }
+    }
+
+}
+
+void ORBextractor::ComputePyramid_zzw(cv::Mat image)
+{
+    for (int level = 0; level < nlevels; ++level)
+    {
+        float scale = mvInvScaleFactor[level];
+        Size sz(cvRound((float)image.cols*scale), cvRound((float)image.rows*scale));
+        Size wholeSize(sz.width + EDGE_THRESHOLD*2, sz.height + EDGE_THRESHOLD*2);
+        Mat temp(wholeSize, image.type()), masktemp;
+        mvImagePyramid[level] = temp(Rect(EDGE_THRESHOLD, EDGE_THRESHOLD, sz.width, sz.height));
+
+        // Compute the resized image
+        if( level != 0 )
+        {
+            resize(mvImagePyramid[level-1], mvImagePyramid[level], sz, 0, 0, INTER_LINEAR);
+
+            copyMakeBorder(mvImagePyramid[level], temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
+                           BORDER_REFLECT_101+BORDER_ISOLATED);
+        }
+        else
+        {
+            copyMakeBorder(image, temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
+                           BORDER_REFLECT_101);
         }
     }
 

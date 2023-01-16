@@ -87,6 +87,7 @@ namespace Planar_SLAM
             mnTrackedVO=0;
             const float r = 5;
             const int n = vCurrentKeys.size();
+            const int nL = vCurrentKeyLines.size();
 
 
             if(1) // visualize 2D points and lines
@@ -154,7 +155,7 @@ namespace Planar_SLAM
                     if(vbMap[i])
                     {
                         //cv::rectangle(im,pt1,pt2,cv::Scalar(155,255,155));
-                        cv::circle(im,vCurrentKeys[i].pt,2,cv::Scalar(155,255,155),-1);
+                        cv::circle(im,vCurrentKeys[i].pt,2,cv::Scalar(0,255,0),-1);
                         mnTracked++;
                     }
                     else // This is match to a "visual odometry" MapPoint created in the last frame
@@ -165,8 +166,15 @@ namespace Planar_SLAM
                     }
                 }
             }
-        }
 
+            for (int i = 0; i < nL; ++i) {
+                if (vbLineVO[i] || vbLineMap[i]) {
+                    if (vbLineMap[i])
+                        cv::line(im, vCurrentKeyLines[i].getEndPoint(), vCurrentKeyLines[i].getStartPoint(),
+                                 cv::Scalar(255, 0, 255),2);
+                }
+            }
+        }
         cv::Mat imWithInfo;
         DrawTextInfo(im,state, imWithInfo);
 
@@ -189,7 +197,7 @@ namespace Planar_SLAM
                 s << "LOCALIZATION | ";
             int nKFs = mpMap->KeyFramesInMap();
             int nMPs = mpMap->MapPointsInMap();
-            s << "KFs: " << nKFs << ", MPs: " << nMPs << ", Matches: " << mnTracked;
+            s << "KFs: " << nKFs << ", MPs: " << nMPs << ", mnTracked: " << mnTracked<<", KeyPoints: "<<N;
             if(mnTrackedVO>0)
                 s << ", + VO matches: " << mnTrackedVO;
         }

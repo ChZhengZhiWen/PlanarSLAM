@@ -26,8 +26,13 @@
 #include "LSDmatcher.h"
 #include "PlaneMatcher.h"
 
+#include "SparseImageAlign.h"
+
 #include "MeshViewer.h"
 #include "MapPlane.h"
+
+#include <Thirdparty/sophus/sophus/se3.hpp>
+#include <Thirdparty/sophus/sophus/so3.hpp>
 
 
 class MeshViewer;
@@ -126,6 +131,10 @@ public:
     list<double> mlFrameTimes;
     list<bool> mlbLost;
 
+    list<cv::Mat> mRotation_wx_list;
+    list<cv::Mat> SparseAlignmentTcw;
+    list<bool> ifFindM;
+
     cv::Mat Rotation_cm;
     cv::Mat mRotation_wc;
     cv::Mat mLastRcm;
@@ -140,6 +149,16 @@ public:
 
     double getTrackTime();
     double trackTime;
+
+    ///-----------------------------------------
+    bool fullManhattanFound;
+    float mfMFVerTh = 0.01;//原本应该放在配置文件中，这里为了方便直接赋值了
+//    float mfMFVerTh = 0.08716;//改为pSLAM的参数
+    cv::Mat manhattanRcw;
+
+    SparseImgAlign *mpAlign = nullptr;
+
+    bool bManhattan;
 
 protected:
 
@@ -161,7 +180,11 @@ protected:
     void UpdateLastFrame();
     bool TrackWithMotionModel();
     bool TranslationEstimation();
+    bool TranslationEstimation_MW();
+    bool TranslationEstimation_ygz();
     bool TranslationWithMotionModel();
+    bool TranslationWithMotionModel_MW();
+    bool TranslationWithMotionModel_NMW();
     bool Relocalization();
 
     bool DetectManhattan();
@@ -179,6 +202,24 @@ protected:
 
     bool NeedNewKeyFrame();
     void CreateNewKeyFrame();
+
+    // 用SVO中的sparse alignment 来更新当前帧位姿
+    // 但是这里不会处理特征点的关联和投影关系
+    bool TrackWithSparseAlignment();
+
+    // 直接法的 Local Map 追踪
+    // 与局部地图的直接匹配
+    bool TrackLocalMapDirect();
+
+    void SearchLocalPointsDirect();
+
+    // 从地图观测中选取近的几个观测
+    /**
+     * @param[in] observations 地图点的观测数据
+     * @param[in] n 选取的数量
+     */
+    vector<pair<KeyFrame *, size_t> > SelectNearestKeyframe(const map<KeyFrame *, size_t> &observations, int n = 5);
+
 
     // In case of performing only localization, this flag is true when there are no matches to
     // points in the map. Still tracking will continue if there are enough matches with temporal points.
@@ -267,10 +308,8 @@ protected:
     int manhattanCount;
     int fullManhattanCount;
 
-    ///-----------------------------------------
-    bool fullManhattanFound;
-    float mfMFVerTh = 0.01;//原本应该放在配置文件中，这里为了方便直接赋值了
-    cv::Mat manhattanRcw;
+    set<MapPoint *> mvpDirectMapPointsCache;     // 缓存之前匹配到的地图点
+    bool mbDirectFailed = false;    // 直接方法是否失败了？
 
 };
 

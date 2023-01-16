@@ -47,6 +47,7 @@ include_directories(
         ${PROJECT_SOURCE_DIR}
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/g2oAddition
+        ${PROJECT_SOURCE_DIR}/Thirdparty/sophus
         ${EIGEN3_INCLUDE_DIR}
         ${Pangolin_INCLUDE_DIRS}
         ${PCL_INCLUDE_DIRS}
@@ -88,6 +89,8 @@ add_library(${PROJECT_NAME} SHARED
         src/MeshViewer.cc
         src/PlaneMatcher.cpp
         Thirdparty/triangle/triangle.cpp
+
+        src/SparseImageAlign.cc
         )
 file(GLOB sources "*.cpp")
 target_link_libraries(${PROJECT_NAME}

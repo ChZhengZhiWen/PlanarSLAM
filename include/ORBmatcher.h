@@ -29,11 +29,13 @@
 #include"MapPoint.h"
 #include"KeyFrame.h"
 #include"Frame.h"
+#include "Common.h"
 
 
 namespace Planar_SLAM
 {
-
+    const int WarpHalfPatchSize = 4;
+    const int WarpPatchSize = 8;
 class ORBmatcher
 {    
 public:
@@ -82,6 +84,73 @@ public:
 
     // Project MapPoints into KeyFrame using a given Sim3 and search for duplicated MapPoints.
     int Fuse(KeyFrame* pKF, cv::Mat Scw, const std::vector<MapPoint*> &vpPoints, float th, vector<MapPoint *> &vpReplacePoint);
+
+    /************************************/
+    // 直接法的匹配
+    // 用直接法判断能否从在当前图像上找到某地图点的投影
+    // 这个函数经常会有误拒的情况，需要进一步检查。
+    bool FindDirectProjection(KeyFrame *ref, Frame *curr, MapPoint *mp, Eigen::Vector2f &px_curr, int &search_level);
+
+private:
+    // 计算affine wrap矩阵
+    void GetWarpAffineMatrix(
+            KeyFrame *ref,
+            Frame *curr,
+            const Vector2f &px_ref,
+            MapPoint *mp,
+            int level,
+            const SE3f &TCR,
+            Eigen::Matrix2f &ACR
+    );
+
+    inline int GetBestSearchLevel(
+            const Eigen::Matrix2f &ACR,
+            const int &max_level,
+            const KeyFrame *ref
+    ) {
+        int search_level = 0;
+        float D = ACR.determinant();
+        while (D > 3.0 && search_level < max_level) {
+            search_level += 1;
+            D *= ref->mvInvLevelSigma2[1];
+        }
+        return search_level;
+    }
+
+    bool Align2D(
+            const cv::Mat &cur_img,
+            uint8_t *ref_patch_with_border,
+            uint8_t *ref_patch,
+            const int n_iter,
+            Vector2f &cur_px_estimate);
+
+    void WarpAffine(
+            const Eigen::Matrix2f &ACR,
+            const cv::Mat &img_ref,
+            const Vector2f &px_ref,
+            const int &level_ref,
+            const KeyFrame *ref,
+            const int &search_level,
+            const int &half_patch_size,
+            uint8_t *patch
+    );
+
+    inline uchar GetBilateralInterpUchar(
+            const double &x, const double &y, const Mat &gray) {
+        const double xx = x - floor(x);
+        const double yy = y - floor(y);
+        uchar *data = &gray.data[int(y) * gray.step + int(x)];
+        return uchar(
+                (1 - xx) * (1 - yy) * data[0] +
+                xx * (1 - yy) * data[1] +
+                (1 - xx) * yy * data[gray.step] +
+                xx * yy * data[gray.step + 1]
+        );
+    }
+
+    uchar _patch[WarpPatchSize * WarpPatchSize];
+    // 带边界的，左右各1个像素
+    uchar _patch_with_border[(WarpPatchSize + 2) * (WarpPatchSize + 2)];
 
 public:
 

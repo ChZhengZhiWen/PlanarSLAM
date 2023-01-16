@@ -63,6 +63,10 @@ namespace Planar_SLAM
         }
 
         SetPose(F.mTcw);
+
+        for (cv::Mat &im: F.mvImagePyramid_zzw) {
+            mvImagePyramid_zzw.push_back(im);
+        }
     }
 
     void KeyFrame::ComputeBoW()

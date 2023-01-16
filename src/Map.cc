@@ -159,7 +159,7 @@ namespace Planar_SLAM {
 
     cv::Mat Map::FindManhattan(Frame &pF, const float &verTh, bool out) {
         cv::Mat bestP1, bestP2;
-        float lverTh = verTh;
+        float lverTh = verTh;//0.08716
         int maxSize = 0;
 
         if(out)
@@ -176,7 +176,6 @@ namespace Planar_SLAM {
             for (int j = i+1;j < pF.mnPlaneNum; ++j) {
                 cv::Mat p2 = pF.mvPlaneCoefficients[j];
 
-                // 向量点积不知道这里为什么就直接是角度了
                 float angle = p1.at<float>(0) * p2.at<float>(0) +
                               p1.at<float>(1) * p2.at<float>(1) +
                               p1.at<float>(2) * p2.at<float>(2);
@@ -191,9 +190,6 @@ namespace Planar_SLAM {
                 if (angle < lverTh && angle > -lverTh && (pF.mvPlanePoints[i].size() + pF.mvPlanePoints[j].size()) > maxSize) {
                     if(out)
                         cout << "vertical!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
-
-                    if(out)
-                        cout <<"plane_"<< j <<" and plane_"<< i << " , angle : " << angle << endl;
 
                     maxSize = pF.mvPlanePoints[i].size() + pF.mvPlanePoints[j].size();
 
@@ -255,9 +251,6 @@ namespace Planar_SLAM {
                     if (angle < lverTh && angle > -lverTh) {
                         if(out)
                             cout << "vertical!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
-
-                        if(out)
-                            cout <<"line_"<< j <<" and plane_"<<  i << " , angle : " << angle << endl;
 
                         lverTh = abs(angle);
 
@@ -377,7 +370,6 @@ namespace Planar_SLAM {
 
             Rotation_cm = U * VT;
         }
-cout<<"Rotation_cm "<<Rotation_cm<<"  FindManhattan()"<<endl;
         return Rotation_cm;
     }
 

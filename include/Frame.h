@@ -31,12 +31,14 @@
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/segmentation/organized_multi_plane_segmentation.h>
 #include <pcl/features/integral_image_normal.h>
+#include "Common.h"
 
 namespace Planar_SLAM
 {
 #define FRAME_GRID_ROWS 48
 #define FRAME_GRID_COLS 64
-
+    using namespace Eigen;
+    using namespace Sophus;
     class MapPoint;
     class KeyFrame;
     class MapLine;
@@ -55,7 +57,6 @@ namespace Planar_SLAM
 
         // Constructor for RGB-D cameras.
         Frame(const cv::Mat &imRGB, const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, const float &depthMapFactor);
-
         // Extract ORB on the image. 0 for left image and 1 for right image.
         void ExtractORB(int flag, const cv::Mat &im);
 
@@ -67,6 +68,9 @@ namespace Planar_SLAM
 
         ////zzw
         void GetLineDepth(const cv::Mat &imDepth);
+
+        // 计算图像金字塔
+        void ComputeImagePyramid_zzw();
 
         void lineDescriptorMAD( std::vector<std::vector<cv::DMatch>> matches, double &nn_mad, double &nn12_mad) const;
 
@@ -123,6 +127,23 @@ namespace Planar_SLAM
 
         // remove useless planes
         bool MaxPointDistanceFromPlane(cv::Mat &plane, PointCloud::Ptr pointCloud);
+
+
+        Vector2f World2Pixel(const Vector3f &p_w, const SE3f &T_c_w) const {
+            return Camera2Pixel(World2Camera(p_w, T_c_w));
+        }
+
+        inline Vector2f Camera2Pixel(const Vector3f &p_c) const {
+            return Vector2f(
+                    fx * p_c(0, 0) / p_c(2, 0) + cx,
+                    fy * p_c(1, 0) / p_c(2, 0) + cy
+            );
+        }
+        inline Vector3f World2Camera(const Vector3f &p_w, const SE3f &T_c_w) const {
+            return T_c_w * p_w;
+        }
+
+
     public:
         // Vocabulary used for relocalization.
         ORBVocabulary* mpORBvocabulary;
@@ -266,6 +287,13 @@ namespace Planar_SLAM
         bool mbNewPlane; // used to determine a keyframe
 
         PlaneDetection planeDetector;
+
+        // 图像金字塔
+        vector<cv::Mat> mvImagePyramid_zzw;
+
+        cv::Mat mImGray;
+
+        vector<int> mvMatchedFrom;  // 标识每个特征点是从哪个Keyframe选取的
 
 
     private:

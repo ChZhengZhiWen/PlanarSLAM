@@ -40,9 +40,12 @@
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
 #include <pcl/ModelCoefficients.h>
+#include "Common.h"
 
 namespace Planar_SLAM
 {
+    using namespace Eigen;
+    using namespace Sophus;
 
     class Map;
     class MapPoint;
@@ -147,6 +150,30 @@ namespace Planar_SLAM
         cv::Mat ComputePlaneWorldCoeff(const int &idx);
 
         // The following variables are accesed from only 1 thread or never change (no mutex needed).
+
+        inline Vector3f Pixel2Camera(const Vector2f &p_p, float depth = 1) const {
+            return Vector3f(
+                    (p_p(0, 0) - cx) * depth / fx,
+                    (p_p(1, 0) - cy) * depth / fy,
+                    depth
+            );
+        }
+
+        Vector2f World2Pixel(const Vector3f &p_w, const SE3f &T_c_w) const {
+            return Camera2Pixel(World2Camera(p_w, T_c_w));
+        }
+
+        inline Vector2f Camera2Pixel(const Vector3f &p_c) const {
+            return Vector2f(
+                    fx * p_c(0, 0) / p_c(2, 0) + cx,
+                    fy * p_c(1, 0) / p_c(2, 0) + cy
+            );
+        }
+
+        inline Vector3f World2Camera(const Vector3f &p_w, const SE3f &T_c_w) const {
+            return T_c_w * p_w;
+        }
+
     public:
 
         static long unsigned int nNextId;
@@ -234,6 +261,8 @@ namespace Planar_SLAM
         std::vector<MapPlane*> mvpParallelPlanes;
         std::vector<MapPlane*> mvpVerticalPlanes;
         bool mbNewPlane; // used to determine a keyframe
+
+        vector<cv::Mat> mvImagePyramid_zzw;
 
         void AddMapPlane(MapPlane* pMP, const int &idx);
         void AddMapVerticalPlane(MapPlane* pMP, const int &idx);

@@ -116,6 +116,9 @@ namespace Planar_SLAM
 
         ///---------------------------------
         float mfMFVerTh = 0.01;//应该放配置文件中的
+//        float mfMFVerTh = 0.08716;//改为pSLAM的参数
+
+
     };
 
 } //namespace Planar_SLAM

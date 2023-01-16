@@ -31,7 +31,8 @@
 #include<stdint-gcc.h>
 
 using namespace std;
-
+using namespace Eigen;
+using namespace Sophus;
 namespace Planar_SLAM
 {
 
@@ -48,7 +49,6 @@ int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoint
     int nmatches=0;
 
     const bool bFactor = th!=1.0;
-
     for(size_t iMP=0; iMP<vpMapPoints.size(); iMP++)
     {
         MapPoint* pMP = vpMapPoints[iMP];
@@ -57,7 +57,6 @@ int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoint
 
         if(pMP->isBad())
             continue;
-
         const int &nPredictedLevel = pMP->mnTrackScaleLevel;
 
         // The size of the window will depend on the viewing direction
@@ -66,8 +65,14 @@ int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoint
         if(bFactor)
             r*=th;
 
-        const vector<size_t> vIndices =
-                F.GetFeaturesInArea(pMP->mTrackProjX,pMP->mTrackProjY,r*F.mvScaleFactors[nPredictedLevel],nPredictedLevel-1,nPredictedLevel);
+        vector<size_t> vIndices ;
+/// ygz
+//      vIndices = F.GetFeaturesInArea(pMP->mTrackProjX,pMP->mTrackProjY,r*F.mvScaleFactors[nPredictedLevel],nPredictedLevel-1,nPredictedLevel);
+
+        vIndices = F.GetFeaturesInArea(pMP->mTrackProjX, pMP->mTrackProjY,
+                                       r * F.mvScaleFactors[nPredictedLevel],
+                                       -1, -1);
+
 
         if(vIndices.empty())
             continue;
@@ -125,7 +130,6 @@ int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoint
             nmatches++;
         }
     }
-
     return nmatches;
 }
 
@@ -185,7 +189,9 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
     vector<int> rotHist[HISTO_LENGTH];
     for(int i=0;i<HISTO_LENGTH;i++)
         rotHist[i].reserve(500);
-    const float factor = 1.0f/HISTO_LENGTH;
+    //!ORBSLAM2错了 知识星球改了一下
+        const float factor = 1.0f / HISTO_LENGTH;
+//    const float factor = HISTO_LENGTH/360.0f;
 
     //关键帧的 2D feature 和 当前帧的 2D feature
     // We perform the matching over ORB that belong to the same vocabulary node (at a certain level)
@@ -1739,5 +1745,199 @@ int ORBmatcher::DescriptorDistance(const cv::Mat &a, const cv::Mat &b)
 
     return dist;
 }
+
+    bool ORBmatcher::FindDirectProjection(
+            KeyFrame *ref, Frame *curr,
+            MapPoint *mp, Vector2f &px_curr, int &search_level) {
+        Matrix2f ACR;
+        int index = mp->GetObservations()[ref];
+        cv::KeyPoint kp = ref->mvKeys[index];
+
+        Vector2f px_ref(kp.pt.x, kp.pt.y);
+
+        //! cv:mat转Sophus::SE3
+        auto tmp_r = Converter::toSE3Quat(ref->GetPose());
+        SE3f ref_GetPose = SE3d(tmp_r.rotation(), tmp_r.translation()).cast<float>();
+        auto res = Converter::toSE3Quat(curr->mTcw * ref->GetPose().inv());
+        SE3f _res = SE3d(res.rotation(), res.translation()).cast<float>();
+
+        SE3f pose_ref = ref_GetPose;
+        SE3f TCR = _res;
+//        SE3f pose_ref = ref->GetPose();
+//        SE3f TCR = curr->mTcw * pose_ref.inverse();
+
+        // 计算带边界的affine wrap，边界是为了便于计算梯度
+        GetWarpAffineMatrix(ref, curr, px_ref, mp, kp.octave, TCR, ACR);
+        search_level = GetBestSearchLevel(ACR, ref->mvImagePyramid_zzw.size() - 1, ref);
+        WarpAffine(ACR, ref->mvImagePyramid_zzw[kp.octave], px_ref, kp.octave, ref, search_level, WarpHalfPatchSize + 1,
+                   _patch_with_border);
+
+        // remove the boarder
+        uint8_t *ref_patch_ptr = _patch;
+        for (int y = 1; y < WarpPatchSize + 1; ++y, ref_patch_ptr += WarpPatchSize) {
+            uint8_t *ref_patch_border_ptr = _patch_with_border + y * (WarpPatchSize + 2) + 1;
+            for (int x = 0; x < WarpPatchSize; ++x)
+                ref_patch_ptr[x] = ref_patch_border_ptr[x];
+        }
+
+        Vector2f px_scaled = px_curr * curr->mvInvScaleFactors[search_level];
+        bool success = Align2D(curr->mvImagePyramid_zzw[search_level], _patch_with_border, _patch, 10, px_scaled);
+        px_curr = px_scaled * curr->mvScaleFactors[search_level];
+        return success;
+    }
+
+    void ORBmatcher::GetWarpAffineMatrix(
+            KeyFrame *ref, Frame *curr,
+            const Vector2f &px_ref,
+            MapPoint *mp,
+            int level, const SE3f &TCR, Matrix2f &ACR) {
+
+        auto tmp_ref_pose = Converter::toSE3Quat(ref->GetPose());
+        SE3f res_ref_pose = SE3d(tmp_ref_pose.rotation(), tmp_ref_pose.translation()).cast<float>();
+        Vector3f res_pt_world;
+        cv::cv2eigen(mp->GetWorldPos(), res_pt_world);
+
+        const Vector3f pt_world = res_pt_world;
+        const SE3f ref_pose = res_ref_pose;
+//        const Vector3f pt_world = mp->GetWorldPos();
+//        const SE3f ref_pose = ref->GetPose();
+        const Vector3f pt_ref = ref_pose * pt_world;
+        float depth = pt_ref[2];
+
+        // 偏移之后的3d点，深度取成和pt_ref一致
+        const Vector3f pt_du_ref = ref->Pixel2Camera(
+                px_ref + Vector2f(WarpHalfPatchSize, 0) * ref->mvScaleFactors[level], depth);
+        const Vector3f pt_dv_ref = ref->Pixel2Camera(
+                px_ref + Vector2f(0, WarpHalfPatchSize) * ref->mvScaleFactors[level], depth);
+
+        const Vector2f px_cur = curr->World2Pixel(pt_ref, TCR);
+        const Vector2f px_du = curr->World2Pixel(pt_du_ref, TCR);
+        const Vector2f px_dv = curr->World2Pixel(pt_dv_ref, TCR);
+
+        ACR.col(0) = (px_du - px_cur) / WarpHalfPatchSize;
+        ACR.col(1) = (px_dv - px_cur) / WarpHalfPatchSize;
+    }
+
+    bool ORBmatcher::Align2D(
+            const cv::Mat &cur_img,
+            uint8_t *ref_patch_with_border,
+            uint8_t *ref_patch,
+            const int n_iter,
+            Vector2f &cur_px_estimate) {
+        const int halfpatch_size_ = 4;
+        const int patch_size_ = 8;
+        const int patch_area_ = 64;
+        bool converged = false;
+
+        // compute derivative of template and prepare inverse compositional
+        float __attribute__ (( __aligned__ ( 16 ))) ref_patch_dx[patch_area_];
+        float __attribute__ (( __aligned__ ( 16 ))) ref_patch_dy[patch_area_];
+        Matrix3f H;
+        H.setZero();
+
+        // compute gradient and hessian
+        const int ref_step = patch_size_ + 2;
+        float *it_dx = ref_patch_dx;
+        float *it_dy = ref_patch_dy;
+        for (int y = 0; y < patch_size_; ++y) {
+            uint8_t *it = ref_patch_with_border + (y + 1) * ref_step + 1;
+            for (int x = 0; x < patch_size_; ++x, ++it, ++it_dx, ++it_dy) {
+                Vector3f J;
+                J[0] = 0.5 * (it[1] - it[-1]);
+                J[1] = 0.5 * (it[ref_step] - it[-ref_step]);
+                J[2] = 1;
+                *it_dx = J[0];
+                *it_dy = J[1];
+                H += J * J.transpose();
+            }
+        }
+        Matrix3f Hinv = H.inverse();
+        float mean_diff = 0;
+
+        // Compute pixel location in new image:
+        float u = cur_px_estimate.x();
+        float v = cur_px_estimate.y();
+
+        // termination condition
+        const float min_update_squared = 0.03 * 0.03;
+        const int cur_step = cur_img.step.p[0];
+        Vector3f update;
+        update.setZero();
+        float chi2 = 0;
+        for (int iter = 0; iter < n_iter; ++iter) {
+            chi2 = 0;
+            int u_r = floor(u);
+            int v_r = floor(v);
+            if (u_r < halfpatch_size_ || v_r < halfpatch_size_ || u_r >= cur_img.cols - halfpatch_size_ ||
+                v_r >= cur_img.rows - halfpatch_size_)
+                break;
+
+            if (isnan(u) ||
+                isnan(v)) // TODO very rarely this can happen, maybe H is singular? should not be at corner.. check
+                return false;
+
+            // compute interpolation weights
+            float subpix_x = u - u_r;
+            float subpix_y = v - v_r;
+            float wTL = (1.0 - subpix_x) * (1.0 - subpix_y);
+            float wTR = subpix_x * (1.0 - subpix_y);
+            float wBL = (1.0 - subpix_x) * subpix_y;
+            float wBR = subpix_x * subpix_y;
+
+            // loop through search_patch, interpolate
+            uint8_t *it_ref = ref_patch;
+            float *it_ref_dx = ref_patch_dx;
+            float *it_ref_dy = ref_patch_dy;
+            Vector3f Jres;
+            Jres.setZero();
+            for (int y = 0; y < patch_size_; ++y) {
+                uint8_t *it = (uint8_t *) cur_img.data + (v_r + y - halfpatch_size_) * cur_step + u_r - halfpatch_size_;
+                for (int x = 0; x < patch_size_; ++x, ++it, ++it_ref, ++it_ref_dx, ++it_ref_dy) {
+                    float search_pixel = wTL * it[0] + wTR * it[1] + wBL * it[cur_step] + wBR * it[cur_step + 1];
+                    float res = search_pixel - *it_ref + mean_diff;
+                    Jres[0] -= res * (*it_ref_dx);
+                    Jres[1] -= res * (*it_ref_dy);
+                    Jres[2] -= res;
+                    chi2 += res * res;
+                }
+            }
+            update = Hinv * Jres;
+            u += update[0];
+            v += update[1];
+            mean_diff += update[2];
+            if (update[0] * update[0] + update[1] * update[1] < min_update_squared) {
+                converged = true;
+                break;
+            }
+        }
+
+        cur_px_estimate << u, v;
+        return converged;
+    }
+
+    void ORBmatcher::WarpAffine(
+            const Matrix2f &ACR, const Mat &img_ref,
+            const Vector2f &px_ref, const int &level_ref, const KeyFrame *ref,
+            const int &search_level, const int &half_patch_size, uint8_t *patch) {
+        const int patch_size = half_patch_size * 2;
+        const Eigen::Matrix2f ARC = ACR.inverse();
+
+        // Affine warp
+        uint8_t *patch_ptr = patch;
+        const Vector2f px_ref_pyr = px_ref / ref->mvScaleFactors[level_ref];
+        for (int y = 0; y < patch_size; y++) {
+            for (int x = 0; x < patch_size; x++, ++patch_ptr) {
+                Vector2f px_patch(x - half_patch_size, y - half_patch_size);
+                px_patch *= ref->mvScaleFactors[search_level];
+                const Vector2f px(ARC * px_patch + px_ref_pyr);
+                if (px[0] < 0 || px[1] < 0 || px[0] >= img_ref.cols - 1 || px[1] >= img_ref.rows - 1) {
+                    *patch_ptr = 0;
+                } else {
+                    *patch_ptr = GetBilateralInterpUchar(px[0], px[1], img_ref);
+                }
+            }
+        }
+    }
+
 
 } //namespace ORB_SLAM

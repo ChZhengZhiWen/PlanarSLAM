@@ -91,6 +91,8 @@ public:
     // See format details at: http://vision.in.tum.de/data/datasets/rgbd-dataset
     void SaveTrajectoryTUM(const string &filename);
 
+    void SaveTrajectoryMRotation(const string &filename,const string &filename1);
+
     // Save keyframe poses in the TUM RGB-D dataset format.
     // This method works for all sensor input.
     // Call first Shutdown()

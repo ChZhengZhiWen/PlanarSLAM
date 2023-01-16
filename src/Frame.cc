@@ -89,6 +89,10 @@ namespace Planar_SLAM {
 
         if (!frame.mTcw.empty())
             SetPose(frame.mTcw);
+
+        for (const cv::Mat &mat: frame.mvImagePyramid_zzw) {
+            mvImagePyramid_zzw.push_back(mat.clone());
+        }
     }
 
     Frame::Frame(const cv::Mat &imRGB, const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp,
@@ -97,6 +101,7 @@ namespace Planar_SLAM {
             : mpORBvocabulary(voc), mpORBextractorLeft(extractor),
               mpORBextractorRight(static_cast<ORBextractor *>(NULL)),
               mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth) {
+        mImGray = imGray.clone();
         // Frame ID
         mnId = nNextId++;
 
@@ -128,6 +133,9 @@ namespace Planar_SLAM {
                 0, fy, cy,
                 0, 0, 1);
         dealWithLine = true;
+
+///ygz
+        ComputeImagePyramid_zzw();
 
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
         ////zzw
@@ -345,8 +353,10 @@ namespace Planar_SLAM {
     }
 
     void Frame::ExtractORB(int flag, const cv::Mat &im) {
+///ygz
         if (flag == 0)
-            (*mpORBextractorLeft)(im, cv::Mat(), mvKeys, mDescriptors);
+            (*mpORBextractorLeft)(this,mvKeys,mDescriptors);
+//            (*mpORBextractorLeft)(im, cv::Mat(), mvKeys, mDescriptors);
         else
             (*mpORBextractorRight)(im, cv::Mat(), mvKeysRight, mDescriptorsRight);
     }
@@ -1084,6 +1094,51 @@ namespace Planar_SLAM {
         for (int i = 0; i < mvKeylinesUn.size(); ++i) {
             mvDepthLine_zzw[i] = std::make_pair(imDepth.at<float>(mvKeylinesUn[i].startPointY, mvKeylinesUn[i].startPointX),
                                                 imDepth.at<float>(mvKeylinesUn[i].endPointY, mvKeylinesUn[i].endPointX));
+        }
+    }
+
+    void Frame::ComputeImagePyramid_zzw() {
+        /*
+        // Undistort the image
+        if (mbNeedUndistort) {
+            if (map1.empty()) {
+                // init the undistortion map
+                cv::initUndistortRectifyMap(
+                        Converter::toCvMat(mK),
+                        mDistCoef, Mat(), Converter::toCvMat(mK),
+                        cv::Size(mImGray.cols, mImGray.rows),
+                        CV_16SC2, map1, map2
+                );
+            }
+
+            if (mSensor == Monocular || mSensor == Stereo || mSensor == RGBD) {
+                cv::Mat img_undistorted;
+                cv::remap(mImGray, img_undistorted, map1, map2, cv::INTER_LINEAR); // 似乎不能把dst和src设成一样的。。
+                mImGray = img_undistorted;
+            }
+            // RGBD 似乎不用去畸变?
+            if (mSensor == Stereo) {
+                // also distort the right camera
+                cv::Mat img_undistorted;
+                cv::remap(mImRight, img_undistorted, map1, map2, cv::INTER_LINEAR);
+                mImRight = img_undistorted;
+            }
+
+            if (mSensor == RGBD) {
+                // also distort the depth image
+                cv::Mat img_undistorted;
+                cv::remap(mImDepth, img_undistorted, map1, map2, cv::INTER_LINEAR);
+                mImDepth = img_undistorted;
+            }
+        }
+        */
+        //原本ComputePyramid是protected不能直接用
+        mpORBextractorLeft->ComputePyramid_zzw(mImGray);
+
+        // 把图像金字塔拷贝出来
+        mvImagePyramid_zzw.resize(mpORBextractorLeft->GetLevels());
+        for (int l = 0; l < mpORBextractorLeft->GetLevels(); l++) {
+            mvImagePyramid_zzw[l] = mpORBextractorLeft->mvImagePyramid[l].clone();
         }
     }
 } //namespace Planar_SLAM

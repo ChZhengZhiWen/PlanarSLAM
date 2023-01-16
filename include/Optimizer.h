@@ -42,6 +42,8 @@ public:
     static int OptimizeSim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &vpMatches1, g2o::Sim3 &g2oS12, const float th2, const bool bFixScale);
 
     int static TranslationOptimization(Frame* pFrame);
+
+    int static PoseOptimization_Direct_zzw(Frame *pFrame);
 };
 
 } //namespace Planar_SLAM
