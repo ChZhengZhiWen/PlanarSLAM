@@ -5,10 +5,8 @@
 #include "Common.h"
 
 // the nls solver from vikit in svo
-// （非常简单的）非线性优化求解器
 // 实现在NLSSolver_impl.hpp里
 // 随后在SparseImageAlign.h中继承，因为那东西本身就是个非线性优化
-// 请勿吐槽代码风格和ORB不一样，我也知道不一样
 
 using namespace Eigen;
 
@@ -61,6 +59,10 @@ namespace Planar_SLAM {
         /// Jacobian and set the member variables H_, Jres_
         virtual float
         computeResiduals(const ModelType &model,
+                         bool linearize_system,
+                         bool compute_weight_scale) = 0;
+        virtual float
+        computeResiduals_zzw(const ModelType &model,
                          bool linearize_system,
                          bool compute_weight_scale) = 0;
 

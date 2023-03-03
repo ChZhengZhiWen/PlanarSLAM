@@ -67,15 +67,53 @@ namespace Planar_SLAM {
         // cache:
         Matrix<float, 6, Dynamic, ColMajor> jacobian_cache_;    // 雅可比矩阵，这个东西是固定下来的
 
+        /// Cached values for all pixels corresponding to a list of feature-patches
+        struct Cache
+        {
+            Matrix<float, 6, Dynamic, ColMajor> jacobian;  // cached jacobian
+            cv::Mat ref_patch;  // cached patch intensity values (with subpixel precision)
+            std::vector<bool> visible_fts; // mask of visible features
+            Cache() {} // default constructor
+            Cache( size_t num_fts, int patch_area ) // constructor
+            {
+                // resize cache variables according to the maximum number of incoming features
+                ref_patch = cv::Mat(num_fts, patch_area, CV_32F);
+                jacobian.resize(Eigen::NoChange, num_fts*patch_area);
+                visible_fts.resize(num_fts, false); // TODO: should it be reset at each level?
+            }
+        };
+        Cache pt_cache_;
+        Cache seg_cache_;
+        std::vector<size_t> patch_offset;   // offset for the segment cache
+
         bool have_ref_patch_cache_;
         cv::Mat ref_patch_cache_;
         std::vector<bool> visible_fts_;
 
+        std::vector<Vector2f> ref;
+        std::vector<Vector2f> cur;
+        std::vector<int> refid;
+        std::vector<int> curid;
+
         // 在ref中计算雅可比
         void precomputeReferencePatches();
+        void precomputeReferencePatches_zzw();
 
         // 派生出来的虚函数
         virtual float computeResiduals(const SE3f &model, bool linearize_system, bool compute_weight_scale = false);
+        virtual float computeResiduals_zzw(const SE3f &model, bool linearize_system, bool compute_weight_scale = false);
+
+        void computeGaussNewtonParamsPoints(
+                const SE3f &T_cur_from_ref, bool linearize_system, bool compute_weight_scale,
+                Cache &cache, Matrix<float, 6, 6> &H, Matrix<float, 6, 1> &Jres,
+                std::vector<float> &errors, float &chi2);
+
+        void computeGaussNewtonParamsSegments(const SE3f &T_cur_from_ref, bool linearize_system, bool compute_weight_scale,
+                                              Cache &cache, Matrix<float, 6, 6> &H, Matrix<float, 6, 1> &Jres,
+                                              std::vector<float> &errors, float &chi2);
+
+        void precomputeGaussNewtonParamsPoints(Cache &cache);
+        void precomputeGaussNewtonParamsSegments(Cache &cache);
 
         virtual int solve();
 
@@ -110,6 +148,21 @@ namespace Planar_SLAM {
             J(1, 4) = -J(0, 3);       // -x*y/z^2
             J(1, 5) = -x * z_inv;         // x/z
             return J;
+        }
+
+        inline size_t setupSampling(size_t patch_size, Vector2f &dif,Vector2f spx,Vector2f epx,float length)
+        {
+            // complete sampling of the segment surroundings,
+            // with minimum overlap of the square patches
+            // if segment is horizontal or vertical, N is seg_length/patch_size
+            // if the segment has angle theta, we need to correct according to the distance from center to unit-square border: *corr
+            // scale (pyramid level) is accounted for later
+            dif = epx - spx; // difference vector from start to end point
+            double tan_dir = std::min(fabs(dif[0]),fabs(dif[1])) / std::max(fabs(dif[0]),fabs(dif[1]));
+            double sin_dir = tan_dir / sqrt( 1.0+tan_dir*tan_dir );
+            double correction = 2.0 * sqrt( 1.0 + sin_dir*sin_dir );
+            return std::max( 1.0, length / (2.0*patch_size*correction) );
+            // If length is very low the segment approaches a point and the minimum 1 sample is taken (the central point)
         }
 
     };

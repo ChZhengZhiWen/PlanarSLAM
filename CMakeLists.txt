@@ -91,6 +91,7 @@ add_library(${PROJECT_NAME} SHARED
         Thirdparty/triangle/triangle.cpp
 
         src/SparseImageAlign.cc
+        src/Feature.cpp
         )
 file(GLOB sources "*.cpp")
 target_link_libraries(${PROJECT_NAME}

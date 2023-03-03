@@ -1,8 +1,10 @@
 #include "SparseImageAlign.h"
 #include "Frame.h"
 #include "MapPoint.h"
+#include "Feature.h"
 
 namespace Planar_SLAM {
+using namespace cv::line_descriptor;
 
     SparseImgAlign::SparseImgAlign(
             int max_level, int min_level, int n_iter,
@@ -21,7 +23,7 @@ namespace Planar_SLAM {
 
         reset();
 
-        if (ref_frame->mvKeys.empty()) {
+        if (ref_frame->mvKeys.empty() && ref_frame->mvKeylinesUn.empty()) {
             cout << "SparseImgAlign: no features to track!" << endl;
             return 0;
         }
@@ -34,6 +36,23 @@ namespace Planar_SLAM {
         //雅克比矩阵，每一个特征patch的每个像素对应一个6*1的雅克比
         jacobian_cache_.resize(Eigen::NoChange, ref_patch_cache_.rows * patch_area_);//6 x (n x 16)
         visible_fts_ = vector<bool>(ref_patch_cache_.rows, false);// n x 1
+
+        float total_length = 0;
+        for (vector<KeyLine>::iterator it = ref_frame_->mvKeylinesUn.begin(); it != ref_frame_->mvKeylinesUn.end(); ++it) {
+            Vector2f sp_l;
+            sp_l << it->startPointX, it->startPointY;
+            Vector2f ep_l;
+            ep_l << it->endPointX, it->endPointY;
+            float length = (ep_l-sp_l).norm();
+            total_length += length;
+//            cout<<"sp_l: "<<sp_l<<"  ep_l: "<<ep_l<<"  length: "<<length<<endl;
+        }
+        int max_num_seg_samples = std::ceil( total_length / patch_size_ );
+//        cout<<"max_num_seg_samples "<<max_num_seg_samples<<endl;
+//        getchar();
+
+        pt_cache_  = Cache( ref_frame_->N, patch_area_ );
+        seg_cache_ = Cache( max_num_seg_samples, patch_area_ );
 
         //Tcr
         //! cv:mat转Sophus::SE3
@@ -52,11 +71,12 @@ cout<<"--------------------------------------------"<<endl;
         float _chi2;
         for (level_ = max_level_; level_ >= min_level_; level_ -= 1) {
             mu_ = 0.1;
+            pt_cache_.jacobian.setZero();
+            seg_cache_.jacobian.setZero();
             jacobian_cache_.setZero();
             have_ref_patch_cache_ = false;
 //            n_iter_ = iterations[level_];
             n_iter_ = 10;
-
             optimize(T_cur_from_ref,_chi2);
             cout<<endl;
         }
@@ -156,6 +176,16 @@ cout<<"--------------------------------------------"<<endl;
                     //计算像素雅克比，即像素梯度*投影雅克比
                     jacobian_cache_.col(feature_counter * patch_area_ + pixel_counter) =
                             (dx * frame_jac.row(0) + dy * frame_jac.row(1)) * (focal_length * scale);
+
+                    if(i<4 && x==0){
+                        cout<<endl<<"======================"<<endl;
+                        cout<<"i: "<<i<<"  x: "<<x<<"  y: "<<y<<endl;
+                        cout<<"dx "<<dx<<"  dy "<<dy<<endl;
+                        cout<<"xyz_ref "<<xyz_ref<<endl;
+                        cout<<"cache_ptr "<<*cache_ptr<<endl;
+                        cout<<"jacobian_cache_ "<<jacobian_cache_.col(feature_counter * patch_area_ + pixel_counter)<<endl;
+                        cout<<endl<<"======================"<<endl;
+                    }
                 }
             }
         }
@@ -182,6 +212,12 @@ cout<<"--------------------------------------------"<<endl;
         if (have_ref_patch_cache_ == false)
             precomputeReferencePatches();
 
+//        cout<<"jacobian_cache_ computeResiduals"<<endl<<"----------------------------"<<endl;
+//        for (int i = 0; i < 10; ++i) {
+//            cout<<jacobian_cache_.col(i)<<endl<<"----------------------------"<<endl;
+//        }
+//        getchar();
+
         // compute the weights on the first iteration
         //可忽略
         std::vector<float> errors;
@@ -196,7 +232,7 @@ cout<<"--------------------------------------------"<<endl;
         size_t feature_counter = 0; // is used to compute the index of the cached jacobian
 
         size_t visible = 0;
-//cout<<"ref_frame_->N "<<ref_frame_->N<<endl;
+
         for (int i = 0; i < ref_frame_->N; i++, feature_counter++) {
             // check if feature is within image
             if (visible_fts_[i] == false)
@@ -271,6 +307,16 @@ cout<<"--------------------------------------------"<<endl;
                     chi2 += res * res * weight;
                     n_meas_++;
 
+//                    if(i<10){
+//                        cout<<endl<<"======================"<<endl;
+//                        cout<<"i: "<<i<<"  x: "<<x<<"  y: "<<y<<endl;
+//                        cout<<"intensity_cur "<<intensity_cur<<"  ref_patch_cache_ptr "<<*ref_patch_cache_ptr<<endl;
+//                        cout<<"res "<<res<<endl;
+//                        cout<<"chi2 "<<chi2<<endl;
+//                        cout<<endl<<"======================"<<endl;
+//                    }
+
+
                     //求解雅克比过程
                     if (linearize_system) {
                         // compute Jacobian, weighted Hessian and weighted "steepest descend images" (times error)
@@ -293,7 +339,677 @@ cout<<"--------------------------------------------"<<endl;
         return chi2 / n_meas_;
     }
 
+    float SparseImgAlign::computeResiduals_zzw(
+            const SE3f &T_cur_from_ref,
+            bool linearize_system,
+            bool compute_weight_scale) {
+        // Warp the (cur)rent image such that it aligns with the (ref)erence image
+        //当前迭代金字塔层的图像
+        const cv::Mat &cur_img = cur_frame_->mvImagePyramid_zzw[level_];
 
+        //可忽略
+        //display_ default false
+        if (linearize_system && display_)
+            resimg_ = cv::Mat(cur_img.size(), CV_32F, cv::Scalar(0));
+
+
+        //预计算参考帧特征patch的缓存，即将ref_patch_cache_开辟的存储空间填上相应的值
+        //可以暂时认为ref_patch_cache_中已经有值了
+        if (have_ref_patch_cache_ == false)
+            precomputeReferencePatches_zzw();
+
+
+        // compute the weights on the first iteration
+        //可忽略
+        std::vector<float> errors;
+        if (compute_weight_scale)
+            errors.reserve(visible_fts_.size());
+
+        Matrix<float, 6, 6> pt_H;
+        Matrix<float, 6, 1> pt_Jres;
+        // define other interest variables
+        std::vector<float> pt_errors;
+        float pt_chi2 = 0.0;
+
+        computeGaussNewtonParamsPoints(
+                T_cur_from_ref, linearize_system, compute_weight_scale,
+                pt_cache_, pt_H, pt_Jres, pt_errors, pt_chi2 );
+
+        Matrix<float, 6, 6> seg_H;
+        Matrix<float, 6, 1> seg_Jres;
+        // define other interest variables
+        std::vector<float> seg_errors;
+        float seg_chi2 = 0.0;
+
+        // compute the parameters for Gauss-Newton update
+//        computeGaussNewtonParamsSegments(
+//                T_cur_from_ref, linearize_system, compute_weight_scale,
+//                seg_cache_, seg_H, seg_Jres, seg_errors, seg_chi2 );
+
+        if(linearize_system)
+        {
+            // sum the contribution from both points and segments
+//            H_    = pt_H    + seg_H;
+//            Jres_ = pt_Jres + seg_Jres;
+            H_    = pt_H    ;
+            Jres_ = pt_Jres ;
+        }
+
+//        float chi2 = pt_chi2 + seg_chi2;
+        float chi2 = pt_chi2 ;
+
+        cout<<"pt_chi2: "<<pt_chi2<<"  seg_chi2:"<<seg_chi2<<endl;
+
+        // compute the weights on the first iteration
+        if (compute_weight_scale && iter_ == 0)
+            scale_ = scale_estimator_->compute(errors);
+
+        return chi2 / n_meas_;
+    }
+
+    void SparseImgAlign::computeGaussNewtonParamsPoints(
+            const SE3f &T_cur_from_ref,
+            bool linearize_system,
+            bool compute_weight_scale,
+            Cache& cache,
+            Matrix<float, 6, 6> &H,
+            Matrix<float, 6, 1> &Jres,
+            std::vector<float>& errors,
+            float& chi2)
+    {
+        // initialize patch parameters (mainly define its geometry)
+        Patch patch( patch_size_, cur_frame_->mvImagePyramid_zzw[level_] );
+        Patch resPatch;
+        //display_ default false
+        if(linearize_system && display_)
+            resPatch = Patch( patch_size_, resimg_ );
+
+        // compute the weights on the first iteration
+
+        if(compute_weight_scale)
+            errors.reserve(cache.visible_fts.size());
+
+        ///? scale用的是ref的金字塔层而patch用的是cur的
+        const float scale = ref_frame_->mvInvScaleFactors[level_];
+
+        // reset chi2 variable to zero
+        chi2 = 0.0;
+
+        // set GN parameters to zero prior to accumulate results
+        H.setZero();
+        Jres.setZero();
+        size_t feature_counter = 0; // is used to compute the index of the cached jacobian
+        std::vector<bool>::iterator visiblity_it = cache.visible_fts.begin();
+
+        for(int i = 0; i < ref_frame_->N; i++, ++feature_counter, ++visiblity_it)
+        {
+            // check if feature is within image
+            if(!*visiblity_it)
+                continue;
+
+            // compute pixel location in cur img
+            MapPoint *mp = ref_frame_->mvpMapPoints[i];
+            assert(mp != nullptr);
+
+            // compute pixel location in cur img
+            auto tmp = Converter::toSE3Quat(ref_frame_->mTcw);
+            SE3f ref_Tcw_SE3 = SE3d(tmp.rotation(), tmp.translation()).cast<float>();
+            Vector3f WorldPos;
+            cv::cv2eigen(mp->GetWorldPos(),WorldPos);
+            const Vector3f xyz_ref = ref_Tcw_SE3 * WorldPos;
+//            const Vector3f xyz_ref = ref_frame_->mTcw * mp->GetWorldPos();
+            const Vector3f xyz_cur(T_cur_from_ref * xyz_ref);
+            const Vector2f uv_cur(cur_frame_->Camera2Pixel(xyz_cur));
+            const Vector2f uv_cur_pyr(uv_cur * scale);
+
+            // set patch position for current feature
+            patch.setPosition(uv_cur_pyr);
+            // skip this feature if the patch (with extra pixel for border in derivatives) does not fully lie within the image
+            if(!patch.isInFrame(patch.halfsize))
+                continue;
+            // compute the bilinear interpolation weights constant along the patch scan
+            patch.computeInterpWeights();
+            // set the patch at the corresponding ROI in the image
+            patch.setRoi();
+            // iterate through all points in the Region Of Interest defined by the patch
+            // the pointer points to the data in the original image matrix
+            // (this is efficient C-like row-wise scanning of patch, see OpenCV tutorial "How to scan images")
+            size_t pixel_counter = 0;
+            float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + patch.area*feature_counter;
+            uint8_t* img_ptr; // pointer that will point to memory locations of the ROI (same memory as for the original full ref_img)
+            const int stride = patch.stride; // the stride stored in the patch is that necessary to jump between the full matrix rows
+            cv::MatIterator_<float> itDisp;
+            //display_ default false
+            if(linearize_system && display_)
+            {
+                resPatch.setPosition(uv_cur_pyr);
+                resPatch.setRoi();
+                itDisp = resPatch.roi.begin<float>();
+            }
+            for(int y=0; y<patch.size; ++y) // sweep the path row-wise (most efficient for RowMajor storage)
+            {
+                // get the pointer to first element in row y of the patch ROI
+                // Mat.ptr() acts on the dimension #0 (rows)
+                img_ptr = patch.roi.ptr(y);
+                for(int x=0; x<patch.size; ++x, ++img_ptr, ++cache_ptr, ++pixel_counter)
+                {
+                    // compute residual
+                    const float intensity_cur = patch.wTL*img_ptr[0] + patch.wTR*img_ptr[1] + patch.wBL*img_ptr[stride] + patch.wBR*img_ptr[stride+1];
+                    const float res = intensity_cur - (*cache_ptr);
+                    const float res2 = res*res;
+
+                    // used to compute scale for robust cost
+                    if(compute_weight_scale)
+                        errors.push_back(fabsf(res));
+
+                    // robustification
+                    float weight = 1.0;
+                    /*
+                    if(use_weights_)
+                    {
+                        if(compute_weight_scale && iter_ != 0)
+                        {
+                            //weight = 2.0*fabsf(res) / (1.0+res2/scale_pt);
+                            weight = 1.0 / (1.0+fabsf(res)/scale_pt);
+                            //weight = weight_estimator.value(fabsf(res)/scale_pt);
+                        }
+                        else
+                        {
+                            //weight = 2.0*fabsf(res) / (1.0+res2);
+                            weight = 1.0 / (1.0+fabsf(res));
+                            //weight = weight_estimator.value(fabsf(res));
+                        }
+                    }
+                    */
+                    chi2 += res*res*weight;
+                    n_meas_++;
+
+//                    if(i<10){
+//                        cout<<endl<<"======================"<<endl;
+//                        cout<<"i: "<<i<<"  x: "<<x<<"  y: "<<y<<endl;
+//                        cout<<"intensity_cur "<<intensity_cur<<"  cache_ptr "<<*cache_ptr<<endl;
+//                        cout<<"res "<<res<<endl;
+//                        cout<<"chi2 "<<chi2<<endl;
+//                        cout<<endl<<"======================"<<endl;
+//                    }
+
+
+                    if(linearize_system)
+                    {
+                        // compute Jacobian, weighted Hessian and weighted "steepest descend images" (times error)
+                        const Sophus::Vector6f J(cache.jacobian.col(feature_counter*patch.area + pixel_counter));
+                        H.noalias() += J*J.transpose()*weight;
+                        Jres.noalias() -= J*res*weight;
+                        //display_ default false
+                        if(display_)
+                        {
+                            *itDisp = res/255.0;
+                            ++itDisp;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void SparseImgAlign::computeGaussNewtonParamsSegments(
+            const SE3f &T_cur_from_ref,
+            bool linearize_system,
+            bool compute_weight_scale,
+            Cache &cache,
+            Matrix<float, 6, 6> &H,
+            Matrix<float, 6, 1> &Jres,
+            std::vector<float> &errors,
+            float &chi2)
+    {
+        // initialize patch parameters (mainly define its geometry)
+        Patch patch( patch_size_, cur_frame_->mvImagePyramid_zzw[level_] );
+        Patch resPatch;
+        //display_ default false
+        if(linearize_system && display_)
+            resPatch = Patch( patch_size_, resimg_ );
+
+        // compute the weights on the first iteration
+        if(compute_weight_scale)
+            errors.reserve(cache.visible_fts.size());
+        ///? scale用的是ref的金字塔层而patch用的是cur的
+        const float scale = ref_frame_->mvInvScaleFactors[level_];
+
+        // reset chi2 variable to zero
+        chi2 = 0.0;
+
+        // set GN parameters to zero prior to accumulate results
+        H.setZero();
+        Jres.setZero();
+        std::vector<size_t>::iterator offset_it = patch_offset.begin();
+        size_t cache_idx = 0; // index of the current pixel as stored in cache
+        std::vector<bool>::iterator visiblity_it = cache.visible_fts.begin();
+
+        Matrix<float,6,6> H_ls    = Matrix<float, 6, 6>::Zero();
+        Matrix<float,6,1> Jres_ls = Matrix<float, 6, 1>::Zero();
+
+        for(int i = 0; i < ref_frame_->NL; i++, ++offset_it, ++visiblity_it)
+        {
+            // check if feature is within image
+            if(!*visiblity_it)
+                continue;
+
+            MapLine *ml = ref_frame_->mvpMapLines[i];
+            if (!ml || ml->isBad() || ref_frame_->mvbLineOutlier[i]) {
+                continue;
+            }
+
+            const cv::line_descriptor::KeyLine kl = ref_frame_->mvKeylinesUn[i];
+            Vector2f sp_l(kl.startPointX,kl.startPointY),ep_l(kl.endPointX,kl.endPointY);
+            float length = (ep_l-sp_l).norm();
+
+            // setup current index in cache according to stored offset values
+            cache_idx = *offset_it;
+
+            Vector2f inc2f; // will store the difference vector from start to end points in the segment first
+            // later will parameterize the 2D step to sample the segment
+            size_t N_samples = setupSampling(patch.size, inc2f, sp_l, ep_l, length);
+            // Adjust the number of samples in terms of the current pyramid level
+            N_samples = 1 + (N_samples-1) / (1<<level_); // for lvl 0 take all, for lvl n downsample by 2^n
+
+            // Parameterize 3D segment with start point and discrete 3D increment
+//            double p_depth = (it->feat3D->spos_-ref_pos).norm(); // depth (norm of the vector) of segment 3D start point
+//            Vector3d p_ref = it->sf * p_depth; // 3D start point in the frame coordinates
+//            double q_depth = (it->feat3D->epos_-ref_pos).norm(); // depth (norm of the vector) of segment 3D end point
+//            Vector3d q_ref = it->ef * q_depth; // 3D start point in the frame coordinates
+//            Vector3d inc3d = (q_ref-p_ref) / (N_samples-1); // 3D increment to go from start to end of segment in N steps
+//            Vector3d xyz_ref = p_ref; // 3D point in the segment (to update it in the loop), initialized at start 3D point
+
+            auto tmp = Converter::toSE3Quat(ref_frame_->mTcw);
+            SE3f ref_Tcw_SE3 = SE3d(tmp.rotation(), tmp.translation()).cast<float>();
+            const Vector3f p_ref = ref_Tcw_SE3 * ml->mStart3D.cast<float>();
+            const Vector3f q_ref = ref_Tcw_SE3 * ml->mEnd3D.cast<float>();
+            Vector3f inc3f = (q_ref-p_ref) / (N_samples-1);
+            Vector3f xyz_ref = p_ref;
+            cout<<"N_samples "<<N_samples<<endl;
+            cout<<"inc3f "<<inc3f<<endl;
+
+
+            // Evaluate over the patch for each point sampled in the segment (including extremes)
+            Matrix<float,6,6> H_    = Matrix<float, 6, 6>::Zero();
+            Matrix<float,6,1> Jres_ = Matrix<float, 6, 1>::Zero();
+            vector<float> ls_res;
+            bool good_line = true;
+            for(unsigned int sample = 0; sample < N_samples; ++sample, xyz_ref+=inc3f )
+            {
+                cur.push_back(ref_frame_->Camera2Pixel(xyz_ref));
+                curid.push_back(ml->mnId);
+                // compute pixel location in cur img
+                const Vector3f xyz_cur(T_cur_from_ref * xyz_ref);
+                const Vector2f uv_cur(cur_frame_->Camera2Pixel(xyz_cur));
+                const Vector2f uv_cur_pyr(uv_cur * scale);
+                // set patch position for current feature
+
+                patch.setPosition(uv_cur_pyr);
+                // skip this feature if the patch (with extra pixel for border in derivatives) does not fully lie within the image
+                if(!patch.isInFrame(patch.halfsize))
+                {
+                    cache_idx += patch.size; // Do not lose position of the next patch in cache!
+                    good_line = false;
+                    sample    = N_samples;
+                    continue;
+                }
+                // compute the bilinear interpolation weights constant along the patch scan
+                patch.computeInterpWeights();
+                // set the patch at the corresponding ROI in the image
+                patch.setRoi();
+                // iterate through all points in the Region Of Interest defined by the patch
+                // the pointer points to the data in the original image matrix
+                // (this is efficient C-like row-wise scanning of patch, see OpenCV tutorial "How to scan images")
+                float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + cache_idx;
+                uint8_t* img_ptr; // pointer that will point to memory locations of the ROI (same memory as for the original full ref_img)
+                const int stride = patch.stride; // the stride stored in the patch is that necessary to jump between the full matrix rows
+                cv::MatIterator_<float> itDisp;
+                //display_ default false
+                if(linearize_system && display_)
+                {
+                    resPatch.setPosition(uv_cur_pyr);
+                    resPatch.setRoi();
+                    itDisp = resPatch.roi.begin<float>();
+                }
+//cout<<endl<<endl;
+                for(int y=0; y<patch.size; ++y) // sweep the path row-wise (most efficient for RowMajor storage)
+                {
+                    // get the pointer to first element in row y of the patch ROI
+                    // Mat.ptr() acts on the dimension #0 (rows)
+                    img_ptr = patch.roi.ptr(y);
+                    for(int x=0; x<patch.size; ++x, ++img_ptr, ++cache_ptr, ++cache_idx)
+                    {
+                        // compute residual
+                        const float intensity_cur = patch.wTL*img_ptr[0] + patch.wTR*img_ptr[1] + patch.wBL*img_ptr[stride] + patch.wBR*img_ptr[stride+1];
+                        const float res = intensity_cur - (*cache_ptr);
+//cout<<res<<" ";
+                        ls_res.push_back(res);
+                        // if not?
+                        if(linearize_system)
+                        {
+                            // compute Jacobian, weighted Hessian and weighted "steepest descend images" (times error)
+                            const Sophus::Vector6f J(cache.jacobian.col(cache_idx));
+                            H_.noalias()     += J*J.transpose() ;
+                            Jres_.noalias()  -= J*res;
+                            //display_ default false
+                            if(display_)
+                            {
+                                *itDisp = res/255.0;
+                                ++itDisp;
+                            }
+                        }
+                    }//end col-sweep of current row
+                }//end row-sweep
+//cout<<endl<<endl;
+            }//end segment-sweep
+
+            float res_ = 0.0, res2_;
+            for(vector<float>::iterator it = ls_res.begin(); it != ls_res.end(); ++it){
+                //res_ += pow(*it,2);
+                res_ += fabsf(*it);
+                //res_ += pow(*it,2);
+            }
+            //res_ = sqrt(res_)/double(N_samples) ;
+            res_ = res_ / double(N_samples);
+//cout<<"N_samples: "<<N_samples<<endl;
+//cout<<"res_ "<<res_<<endl;
+//            getchar();
+            if( good_line && res_ < 200.0)  // debug
+            {
+                /*float res_ = 0.0, res2_;
+                for(vector<float>::iterator it = ls_res.begin(); it != ls_res.end(); ++it){
+                  //res_ += pow(*it,2);
+                  res_ += fabsf(*it);
+                  //res_ += pow(*it,2);
+                }
+                //res_ = sqrt(res_)/double(N_samples) ;
+                res_ = res_ / double(N_samples);*/
+
+                // used to compute scale for robust cost
+                if(compute_weight_scale)
+                    errors.push_back(res_);
+                // robustification
+                float weight = 1.0;
+                /*
+                if(use_weights_)
+                {
+                    if(compute_weight_scale && iter_ != 0)
+                    {
+                        //weight = 2.0*fabsf(res) / (1.0+res2/scale_pt);
+                        weight = 1.0 / (1.0+res_/scale_ls);
+                        //weight = weight_estimator.value(res_/scale_ls);
+                    }
+                    else
+                    {
+                        //weight = 2.0*fabsf(res) / (1.0+res2);
+                        weight = 1.0 / (1.0+res_);
+                        //weight = weight_estimator.value(res_);
+                    }
+                }
+*/
+                // update total H and J
+                H.noalias()    += H_    * weight / res_;  // only divide hessian once (H/res2 g/res)
+                Jres.noalias() += Jres_ * weight ;        // it is already negative
+                chi2           += res_*res_*weight;
+                n_meas_++;
+
+            }
+///            else
+///                it->feat3D = NULL;
+
+            good_line = true;
+            ls_res.clear();
+            H_.setZero();
+            Jres_.setZero();
+        }//end feature-sweep
+
+        cout<<"cur.size: "<<cur.size()<<"  ref.size: "<<ref.size()<<endl;
+        cout<<"curid.size: "<<curid.size()<<"  refid.size: "<<refid.size()<<endl;
+        for (int i = 0; i < cur.size(); ++i) {
+            cout<<"cur "<<endl<<cur[i]<<endl;
+            cout<<"ref "<<endl<<ref[i]<<endl;
+            cout<<"refid "<<refid[i]<<endl;
+            cout<<"curid "<<curid[i]<<endl;
+        }
+        getchar();
+    }
+
+    void SparseImgAlign::precomputeReferencePatches_zzw()
+    {
+        precomputeGaussNewtonParamsPoints(pt_cache_);
+//        precomputeGaussNewtonParamsSegments(seg_cache_);
+        // set flag to true to avoid repeating unnecessary computations in the following iterations
+        have_ref_patch_cache_ = true;
+    }
+
+    void SparseImgAlign::precomputeGaussNewtonParamsPoints(Cache &cache)
+    {
+
+        // initialize patch parameters (mainly define its geometry)
+        Patch patch( patch_size_, ref_frame_->mvImagePyramid_zzw[level_] );
+//        const float scale = 1.0f/(1<<level_);
+        const float scale = ref_frame_->mvInvScaleFactors[level_];
+        const float focal_length = ref_frame_->fx;
+
+        /* precompute intensity and jacobian for the point patches in the reference image */
+        {
+            size_t feature_counter = 0;
+            std::vector<bool>::iterator visiblity_it = cache.visible_fts.begin();
+            for(int i = 0; i < ref_frame_->N; i++, ++feature_counter, ++visiblity_it)
+            {
+                // if point is not valid (empty or null) skip this feature
+                MapPoint *mp = ref_frame_->mvpMapPoints[i];
+                if (mp == nullptr || mp->isBad() || ref_frame_->mvbOutlier[i] == true)
+                    continue;
+
+                // set patch position for current feature
+                const cv::KeyPoint &kp = ref_frame_->mvKeys[i];
+                Vector2f tem(kp.pt.x,kp.pt.y);
+                patch.setPosition(tem*scale);
+
+                // skip this feature if the patch (with extra pixel for border in derivatives) does not fully lie within the image
+                if(!patch.isInFrame(patch.halfsize+1))
+                    continue;
+
+
+                // compute the bilinear interpolation weights constant along the patch scan
+                patch.computeInterpWeights();
+                // set the patch at the corresponding ROI in the image
+                patch.setRoi();
+
+
+                // flag the feature as valid/visible
+                *visiblity_it = true;
+
+                // cannot just take the 3d points coordinate because of the reprojection errors in the reference image!!!
+                auto tmp = Converter::toSE3Quat(ref_frame_->mTcw);
+                SE3f ref_Tcw_SE3 = SE3d(tmp.rotation(), tmp.translation()).cast<float>();
+                Vector3f WorldPos;
+                cv::cv2eigen(mp->GetWorldPos(),WorldPos);
+                const Vector3f xyz_ref = ref_Tcw_SE3 * WorldPos;
+//                const Vector3f xyz_ref = ref_frame_->mTcw * mp->GetWorldPos();
+
+                // evaluate projection jacobian
+                Matrix<float,2,6> frame_jac;
+                frame_jac = JacobXYZ2Cam(xyz_ref);
+
+                // iterate through all points in the Region Of Interest defined by the patch
+                // the pointer points to the data in the original image matrix
+                // (this is efficient C-like row-wise scanning of patch, see OpenCV tutorial "How to scan images")
+                size_t pixel_counter = 0;
+                float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + patch.area*feature_counter;
+                uint8_t* img_ptr;                 // pointer that will point to memory locations of the ROI (same memory as for the original full ref_img)
+                const int stride = patch.stride;  // the stride stored in the patch is that necessary to jump between the full matrix rows
+                for(int y=0; y<patch.size; ++y)   // sweep the path row-wise (most efficient for RowMajor storage)
+                {
+                    // get the pointer to first element in row y of the patch ROI
+                    // Mat.ptr() acts on the dimension #0 (rows)
+                    img_ptr = patch.roi.ptr(y);
+                    for(int x=0; x<patch.size; ++x, ++img_ptr, ++cache_ptr, ++pixel_counter)
+                    {
+                        // precompute interpolated reference patch color
+                        *cache_ptr = patch.wTL*img_ptr[0] + patch.wTR*img_ptr[1] + patch.wBL*img_ptr[stride] + patch.wBR*img_ptr[stride+1];
+
+                        // we use the inverse compositional: thereby we can take the gradient always at the same position
+                        // get gradient of warped image (~gradient at warped position)
+                        float dx = 0.5f * ((patch.wTL*img_ptr[1] + patch.wTR*img_ptr[2] + patch.wBL*img_ptr[stride+1] + patch.wBR*img_ptr[stride+2])
+                                           -(patch.wTL*img_ptr[-1] + patch.wTR*img_ptr[0] + patch.wBL*img_ptr[stride-1] + patch.wBR*img_ptr[stride]));
+                        float dy = 0.5f * ((patch.wTL*img_ptr[stride] + patch.wTR*img_ptr[1+stride] + patch.wBL*img_ptr[stride*2] + patch.wBR*img_ptr[stride*2+1])
+                                           -(patch.wTL*img_ptr[-stride] + patch.wTR*img_ptr[1-stride] + patch.wBL*img_ptr[0] + patch.wBR*img_ptr[1]));
+
+
+                        // cache the jacobian
+                        //pt_cache_.jacobian.col = [1,2]*[2,6]
+                        // focal_length / (1<<level_) 图像缩放内参矩阵随之缩放
+                        pt_cache_.jacobian.col(feature_counter*patch.area + pixel_counter) =
+                                (dx*frame_jac.row(0) + dy*frame_jac.row(1))*(focal_length * scale);
+
+                    }
+                }
+            }
+        }
+
+    }
+
+    void SparseImgAlign::precomputeGaussNewtonParamsSegments(Cache &cache)
+    {
+        // initialize patch parameters (mainly define its geometry)
+        Patch patch( patch_size_, ref_frame_->mvImagePyramid_zzw[level_] );
+
+        const float scale = ref_frame_->mvInvScaleFactors[level_];
+        const float focal_length = ref_frame_->fx;
+        const int border = patch_halfsize_ + 1;
+
+        // TODO: feature_counter is no longer valid because each segment
+        //  has a variable number of patches (and total pixels)
+        std::vector<bool>::iterator visiblity_it = cache.visible_fts.begin();
+        patch_offset = std::vector<size_t>(ref_frame_->NL,0); // vector of offsets in cache for each patch
+        std::vector<size_t>::iterator offset_it = patch_offset.begin();
+        size_t cache_idx = 0; // index of the current pixel as stored in cache
+        for(int i = 0; i < ref_frame_->NL; i++, ++visiblity_it, ++offset_it)
+        {
+            // set cache index to current feature offset
+            *offset_it = cache_idx;
+
+            // if line segment is not valid (empty or null) skip this feature
+            MapLine *ml = ref_frame_->mvpMapLines[i];
+            if (!ml || ml->isBad() || ref_frame_->mvbLineOutlier[i]) {
+                continue;
+            }
+
+            const cv::line_descriptor::KeyLine kl = ref_frame_->mvKeylinesUn[i];
+            Vector2f sp_l(kl.startPointX,kl.startPointY),ep_l(kl.endPointX,kl.endPointY);
+            float length = (ep_l-sp_l).norm();
+
+            const float u_ref_s = kl.startPointX*scale;
+            const float v_ref_s = kl.startPointY*scale;
+            const float u_ref_e = kl.endPointX*scale;
+            const float v_ref_e = kl.endPointY*scale;
+            const int u_ref_i_s = floorf(u_ref_s);
+            const int v_ref_i_s = floorf(v_ref_s);
+            const int u_ref_i_e = floorf(u_ref_e);
+            const int v_ref_i_e = floorf(v_ref_e);
+
+            if (u_ref_i_s - border < 0 || v_ref_i_s - border < 0 || u_ref_i_s + border >= patch.full_img.cols ||
+                    v_ref_i_s + border >= patch.full_img.rows)
+                continue;
+            if (u_ref_i_e - border < 0 || v_ref_i_e - border < 0 || u_ref_i_e + border >= patch.full_img.cols ||
+                    v_ref_i_e + border >= patch.full_img.rows)
+                continue;
+
+            // skip this feature if the patches for start or end points do not fully lie within the image
+//            if(!ref_frame_->cam_->isInFrame((it->spx*scale).cast<int>(),patch.halfsize+1,level_) ||
+//               !ref_frame_->cam_->isInFrame((it->epx*scale).cast<int>(),patch.halfsize+1,level_))
+//                continue;
+
+            // flag the feature as valid/visible
+            *visiblity_it = true;
+
+            // 1. Estimate number of samples (TODO: first, we have implemented for a fixed N_samples)
+            // 2. Compute discrete increment between 2D and 3D points from start to end
+            //      i.   Estimate depth at extreme points
+            //      ii.  Estimate xyz_ref at extreme points
+            //      iii. Get 3D increment
+            // 3. Iterate over the segment
+            //      i.   Estimate jacobian
+            //      ii.  Iterate around the points of the patch
+
+            // Compute the number of samples and total increment
+            Vector2f inc2f; // will store the difference vector from start to end points in the segment first
+            // later will parameterize the 2D step to sample the segment
+            size_t N_samples = setupSampling(patch.size, inc2f, sp_l, ep_l, length);
+            // Adjust the number of samples in terms of the current pyramid level
+            N_samples = 1 + (N_samples-1) / (1<<level_); // for lvl 0 take all, for lvl n downsample by 2^n
+
+            // Parameterize 2D segment
+            inc2f = inc2f * scale / (N_samples-1); // -1 to get nr of intervals
+            Vector2f px_ref = sp_l * scale; // 2D point in the image segment (to update in the loop), initialize at start 2D point
+
+            // Parameterize 3D segment with start point and discrete 3D increment
+//            double p_depth = (it->feat3D->spos_-ref_pos).norm(); // depth (norm of the vector) of segment 3D start point
+//            Vector3d p_ref = it->sf * p_depth; // 3D start point in the frame coordinates
+//            double q_depth = (it->feat3D->epos_-ref_pos).norm(); // depth (norm of the vector) of segment 3D end point
+//            Vector3d q_ref = it->ef * q_depth; // 3D start point in the frame coordinates
+//            Vector3d inc3d = (q_ref-p_ref) / (N_samples-1); // 3D increment to go from start to end of segment in N steps
+//            Vector3d xyz_ref = p_ref; // 3D point in the segment (to update it in the loop), initialized at start 3D point
+
+            auto tmp = Converter::toSE3Quat(ref_frame_->mTcw);
+            SE3f ref_Tcw_SE3 = SE3d(tmp.rotation(), tmp.translation()).cast<float>();
+            const Vector3f p_ref = ref_Tcw_SE3 * ml->mStart3D.cast<float>();
+            const Vector3f q_ref = ref_Tcw_SE3 * ml->mEnd3D.cast<float>();
+            Vector3f inc3f = (q_ref-p_ref) / (N_samples-1);
+            Vector3f xyz_ref = p_ref;
+
+
+            // Evaluate over the patch for each point sampled in the segment (including extremes)
+            for(unsigned int sample = 0; sample<N_samples; ++sample, px_ref+=inc2f, xyz_ref+=inc3f )
+            {
+                refid.push_back(ml->mnId);
+                ref.push_back(px_ref);
+                // set patch position for current point in the segment
+                patch.setPosition( px_ref );
+                // compute the bilinear interpolation weights constant along the patch scan
+                patch.computeInterpWeights();
+                // set the patch at the corresponding ROI in the image
+                patch.setRoi();
+
+                // evaluate projection jacobian
+                Matrix<float,2,6> frame_jac;
+                frame_jac = JacobXYZ2Cam(xyz_ref);
+
+                // iterate through all points in the Region Of Interest defined by the patch
+                // the pointer points to the data in the original image matrix
+                // (this is efficient C-like row-wise scanning of patch, see OpenCV tutorial "How to scan images")
+                float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + cache_idx;
+                uint8_t* img_ptr;                 // pointer that will point to memory locations of the ROI (same memory as for the original full ref_img)
+                const int stride = patch.stride;  // the stride stored in the patch is that necessary to jump between the full matrix rows
+                for(int y=0; y<patch.size; ++y)   // sweep the path row-wise (most efficient for RowMajor storage)
+                {
+                    // get the pointer to first element in row y of the patch ROI
+                    // Mat.ptr() acts on the dimension #0 (rows)
+                    img_ptr = patch.roi.ptr(y);
+                    for(int x=0; x<patch.size; ++x, ++img_ptr, ++cache_ptr, ++cache_idx)
+                    {
+                        // precompute interpolated reference patch color
+                        *cache_ptr = patch.wTL*img_ptr[0] + patch.wTR*img_ptr[1] + patch.wBL*img_ptr[stride] + patch.wBR*img_ptr[stride+1];
+
+                        // we use the inverse compositional: thereby we can take the gradient always at the same position
+                        // get gradient of warped image (~gradient at warped position)
+                        float dx = 0.5f * ((patch.wTL*img_ptr[1] + patch.wTR*img_ptr[2] + patch.wBL*img_ptr[stride+1] + patch.wBR*img_ptr[stride+2])
+                                           -(patch.wTL*img_ptr[-1] + patch.wTR*img_ptr[0] + patch.wBL*img_ptr[stride-1] + patch.wBR*img_ptr[stride]));
+                        float dy = 0.5f * ((patch.wTL*img_ptr[stride] + patch.wTR*img_ptr[1+stride] + patch.wBL*img_ptr[stride*2] + patch.wBR*img_ptr[stride*2+1])
+                                           -(patch.wTL*img_ptr[-stride] + patch.wTR*img_ptr[1-stride] + patch.wBL*img_ptr[0] + patch.wBR*img_ptr[1]));
+
+                        // cache the jacobian
+                        seg_cache_.jacobian.col(cache_idx) =
+                                (dx*frame_jac.row(0) + dy*frame_jac.row(1))*(focal_length * scale);
+
+                    }//end col-sweep in current row
+                }//end row-sweep
+            }//end segment-sweep (through sampled patches)
+        }//end feature-sweep
+    }
 
     int SparseImgAlign::solve() {
         x_ = H_.ldlt().solve(Jres_);

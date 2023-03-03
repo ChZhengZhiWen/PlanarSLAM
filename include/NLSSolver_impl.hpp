@@ -21,7 +21,7 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
     error_increased_ = false;
     //use_weights_ == false
     if (use_weights_)
-        computeResiduals(model, false, true);
+        computeResiduals_zzw(model, false, true);
 
 
     // Save the old model to rollback in case of unsuccessful update
@@ -40,7 +40,7 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
         n_meas_ = 0;
         //根据两帧之间的初始位姿变换，计算两帧之间patch的残差并返回
 
-        float new_chi2 = computeResiduals(model, true, false);
+        float new_chi2 = computeResiduals_zzw(model, true, false);
         _chi2 = new_chi2;
 
         // add prior
@@ -82,8 +82,9 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
         model = new_model;
 
         chi2_ = new_chi2;
+//cout<<"iter_ "<<iter_<<endl;
 cout<<"\r"<<chi2_;
-
+//getchar();
         if (verbose_) {
             std::cout << "It. " << iter_
                       << "\t Success"

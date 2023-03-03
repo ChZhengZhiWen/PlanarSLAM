@@ -35,7 +35,7 @@ namespace Planar_SLAM {
             Vector3d ep_l;
             ep_l << it->endPointX, it->endPointY, 1.0;
             Vector3d lineF;
-            //线段断点的叉乘并归一化得到直线方程系数
+            //线段端点的叉乘并归一化得到直线方程系数
             lineF << sp_l.cross(ep_l);
             lineF = lineF / sqrt(lineF(0) * lineF(0) + lineF(1) * lineF(1) + lineF(2) * lineF(2));
             keylineFunctions.push_back(lineF);

@@ -311,6 +311,8 @@ protected:
     set<MapPoint *> mvpDirectMapPointsCache;     // 缓存之前匹配到的地图点
     bool mbDirectFailed = false;    // 直接方法是否失败了？
 
+    int failedNum ;
+
 };
 
 } //namespace ORB_SLAM

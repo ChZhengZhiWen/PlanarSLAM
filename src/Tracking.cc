@@ -139,6 +139,8 @@ namespace Planar_SLAM {
         fullManhattanCount = 0;
 
         mpPointCloudMapping = make_shared<MeshViewer>(mpMap);
+
+        failedNum = 0;
     }
 
 
@@ -3950,6 +3952,7 @@ int mvpMapPointsCount = 0;
         if (ret == false) {
             cout << "Failed. return back to feature methods" << endl;
             mCurrentFrame.SetPose(mVelocity * mLastFrame.mTcw);
+            cout<<"failedNum  "<<++failedNum<<endl;
             return false;
         }
 
