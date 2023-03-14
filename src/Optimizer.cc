@@ -589,6 +589,7 @@ namespace Planar_SLAM {
         {
             unique_lock<mutex> lock(MapPoint::mGlobalMutex);
 
+
             for (int i = 0; i < N; i++) {
                 MapPoint *pMP = pFrame->mvpMapPoints[i];
                 if (pMP) {
@@ -626,7 +627,7 @@ namespace Planar_SLAM {
                         vpEdgesMono.push_back(e);
                         vnIndexEdgeMono.push_back(i);
                     } else  // Stereo observation
-                    {///rgbd使用这里的
+                    {
                         nInitialCorrespondences++;
                         pFrame->mvbOutlier[i] = false;
 
@@ -667,8 +668,7 @@ namespace Planar_SLAM {
 
             }
         }
-///zzw
-/*
+
         const int NL = pFrame->NL;
 
         vector<EdgeLineProjectXYZOnlyPose *> vpEdgesLineSp;
@@ -981,7 +981,7 @@ namespace Planar_SLAM {
             }
             //cout << " Ver Plane: " << PEror / PNum << endl;
         }
-*/
+
         if (nInitialCorrespondences < 3)
             return 0;
 
@@ -1000,6 +1000,7 @@ namespace Planar_SLAM {
             optimizer.optimize(its[it]);
 
             nBad = 0;
+
             int PNMono = 0;
             double PEMono = 0, PMaxMono = 0;
             for (size_t i = 0, iend = vpEdgesMono.size(); i < iend; i++) {
@@ -1048,6 +1049,7 @@ namespace Planar_SLAM {
                 }
 
                 const float chi2 = e->chi2();
+                //cout<<"optimize chi2"<<chi2<<endl;
                 PNStereo++;
                 PEStereo += chi2;
                 PMaxStereo = PMaxStereo > chi2 ? PMaxStereo : chi2;
@@ -1069,8 +1071,7 @@ namespace Planar_SLAM {
 //                cout << "No stereo points " << " ";
 //            else
 //                cout << " Stereo points: " << PEStereo / PNStereo << endl;
-///zzw
-/*
+
             int PNLine = 0;
             double PELine = 0, PMaxLine = 0;
             for (size_t i = 0, iend = vpEdgesLineSp.size(); i < iend; i++) {
@@ -1260,7 +1261,7 @@ namespace Planar_SLAM {
 //                cout << "No Ver plane " << endl;
 //            else
 //                cout << "Ver Plane: " << PE / PN << endl; //<< " Max: " << PMax << endl;
-*/
+
             if (optimizer.edges().size() < 10)
                 break;
         }

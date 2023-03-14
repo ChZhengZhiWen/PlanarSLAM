@@ -99,7 +99,6 @@ int main(int argc, char **argv)
 
 //        getchar();
     }
-    char bStop;
 
     // Stop all threads
     SLAM.Shutdown();
@@ -119,7 +118,6 @@ int main(int argc, char **argv)
     SLAM.SaveTrajectoryTUM("CameraTrajectory.txt");
     SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
     SLAM.SaveMesh("MeshMap.ply");
-    SLAM.SaveTrajectoryMRotation("TrajectoryMRotation.txt","SparseAlignmentTcw.txt");
 
     return 0;
 }

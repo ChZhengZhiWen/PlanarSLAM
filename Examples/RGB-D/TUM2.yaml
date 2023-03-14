@@ -90,8 +90,8 @@ Plane.AssociationAngMon: 0.86 # 30 degree
 #Plane.AssociationAngMon: 0.985 # 10 degree
 
 #0.01 # 89.4 degree
-Plane.VerticalThreshold: 0.0523 # 87 degree
-#Plane.VerticalThreshold: 0.08716 # 85 degree
+#Plane.VerticalThreshold: 0.0523 # 87 degree
+Plane.VerticalThreshold: 0.08716 # 85 degree
 #Plane.VerticalThreshold: 0.17365 # 80 degree
 #Plane.VerticalThreshold: 0.0 # no vertical constraint
 #Plane.ParallelThreshold: 0.98481 # 10 degree

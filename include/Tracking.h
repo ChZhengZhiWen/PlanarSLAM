@@ -131,9 +131,6 @@ public:
     list<double> mlFrameTimes;
     list<bool> mlbLost;
 
-    list<cv::Mat> mRotation_wx_list;
-    list<cv::Mat> SparseAlignmentTcw;
-    list<bool> ifFindM;
 
     cv::Mat Rotation_cm;
     cv::Mat mRotation_wc;
@@ -152,8 +149,10 @@ public:
 
     ///-----------------------------------------
     bool fullManhattanFound;
-    float mfMFVerTh = 0.01;//原本应该放在配置文件中，这里为了方便直接赋值了
-//    float mfMFVerTh = 0.08716;//改为pSLAM的参数
+    float mfMFVerTh = 0.01745;//原本应该放在配置文件中，这里为了方便直接赋值了 89
+//    float mfMFVerTh = 0.08716;//改为pSLAM的参数 85
+//    float mfMFVerTh = 0.0523;//87
+//    float mfMFVerTh = 0.0349;//88
     cv::Mat manhattanRcw;
 
     SparseImgAlign *mpAlign = nullptr;

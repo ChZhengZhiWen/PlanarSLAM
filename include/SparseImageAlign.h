@@ -73,6 +73,8 @@ namespace Planar_SLAM {
             Matrix<float, 6, Dynamic, ColMajor> jacobian;  // cached jacobian
             cv::Mat ref_patch;  // cached patch intensity values (with subpixel precision)
             std::vector<bool> visible_fts; // mask of visible features
+            std::map<int,std::map<int,std::vector<float>>> seg_ref_patch;
+
             Cache() {} // default constructor
             Cache( size_t num_fts, int patch_area ) // constructor
             {
@@ -89,11 +91,30 @@ namespace Planar_SLAM {
         bool have_ref_patch_cache_;
         cv::Mat ref_patch_cache_;
         std::vector<bool> visible_fts_;
+        int normTh = 20;
 
-        std::vector<Vector2f> ref;
-        std::vector<Vector2f> cur;
-        std::vector<int> refid;
-        std::vector<int> curid;
+        int segNum;
+        std::vector<Vector2f> xyz_ref_compute;
+        std::vector<Vector2f> xyz_ref_computeEnd;
+        std::vector<Vector2f> xyz_cur_compute;
+        std::vector<Vector2f> xyz_cur_computeEnd;
+
+        std::vector<Vector2f> preCompute;
+        std::vector<Vector3f> preCompute3D;
+        std::vector<Vector3f> preCompute3DEnd;
+        std::vector<Vector2f> preComputeEnd;
+
+        std::map<int,Vector2f> prePointCompute;
+
+
+        std::map<int,std::vector<Vector2f>> preCompute_map;
+        std::map<int,std::vector<Vector3f>> preCompute3D_map;
+        std::map<int,std::vector<Vector3f>> preCompute3DEnd_map;
+        std::map<int,std::vector<Vector2f>> preComputeEnd_map;
+        std::map<int,std::vector<Vector2f>> xyz_ref_compute_map;
+        std::map<int,std::vector<Vector2f>> xyz_ref_computeEnd_map;
+        std::map<int,std::vector<Vector2f>> xyz_cur_compute_map;
+        std::map<int,std::vector<Vector2f>> xyz_cur_computeEnd_map;
 
         // 在ref中计算雅可比
         void precomputeReferencePatches();
@@ -159,9 +180,14 @@ namespace Planar_SLAM {
             // scale (pyramid level) is accounted for later
             dif = epx - spx; // difference vector from start to end point
             double tan_dir = std::min(fabs(dif[0]),fabs(dif[1])) / std::max(fabs(dif[0]),fabs(dif[1]));
-            double sin_dir = tan_dir / sqrt( 1.0+tan_dir*tan_dir );
+            double sin_dir = tan_dir / sqrt( 1.0+tan_dir*tan_dir );//1+tanx^2=secx²
             double correction = 2.0 * sqrt( 1.0 + sin_dir*sin_dir );
-            return std::max( 1.0, length / (2.0*patch_size*correction) );
+
+
+//            cout<<"dif:"<<dif[0]<<","<<dif[1]<<"    length:"<<length<<endl;
+//            cout<<"tan_dir:"<<tan_dir<<"   sin_dir:"<<sin_dir<<"   correction:"<<correction<<endl;
+//            return std::max( 1.0, length / (2.0*patch_size*correction) );
+            return std::max( 1.0, length / (patch_size*correction) );
             // If length is very low the segment approaches a point and the minimum 1 sample is taken (the central point)
         }
 

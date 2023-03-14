@@ -26,7 +26,6 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
 
     // Save the old model to rollback in case of unsuccessful update
     ModelType old_model(model);
-
     // perform iterative estimation
     for (iter_ = 0; iter_ < n_iter_; ++iter_) {
         rho_ = 0;
@@ -56,7 +55,9 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
             std::cout << "Matrix is close to singular! Stop Optimizing." << std::endl;
             std::cout << "H = " << H_ << std::endl;
             std::cout << "Jres = " << Jres_ << std::endl;
+            std::cout << "x_ = " << x_ << std::endl;
             stop_ = true;
+            getchar();
         }
 
         // check if error increased since last optimization
@@ -82,9 +83,14 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
         model = new_model;
 
         chi2_ = new_chi2;
-//cout<<"iter_ "<<iter_<<endl;
-cout<<"\r"<<chi2_;
+
+//cout<<"\r"<<chi2_;
+cout<<"iter_ "<<iter_<<"  chi2_ "<<chi2_<<"================================================="<<endl;
+//if(iter_ +1 == n_iter_)
+//    cout<<endl;
 //getchar();
+
+        verbose_ = false;
         if (verbose_) {
             std::cout << "It. " << iter_
                       << "\t Success"
@@ -98,6 +104,7 @@ cout<<"\r"<<chi2_;
 
         // stop when converged, i.e. update step too small
         if (norm_max(x_) <= eps_) {
+            cout<<"update step too small"<<endl;
             break;
         }
     }

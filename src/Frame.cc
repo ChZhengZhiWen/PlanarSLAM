@@ -355,8 +355,8 @@ namespace Planar_SLAM {
     void Frame::ExtractORB(int flag, const cv::Mat &im) {
 ///ygz
         if (flag == 0)
-            (*mpORBextractorLeft)(this,mvKeys,mDescriptors);
-//            (*mpORBextractorLeft)(im, cv::Mat(), mvKeys, mDescriptors);
+//            (*mpORBextractorLeft)(this,mvKeys,mDescriptors);
+            (*mpORBextractorLeft)(im, cv::Mat(), mvKeys, mDescriptors);
         else
             (*mpORBextractorRight)(im, cv::Mat(), mvKeysRight, mDescriptorsRight);
     }

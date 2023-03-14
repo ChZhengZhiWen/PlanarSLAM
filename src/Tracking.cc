@@ -225,14 +225,10 @@ namespace Planar_SLAM {
         //当有效时,lock锁管理模板类管理锁对象，周期结束后自动解锁 ，意思为锁住地图更新
         unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
-        cv::Mat SparseAlignmentTcw_;
-        SparseAlignmentTcw_ = cv::Mat::eye(4, 4, CV_32F);
-
         bManhattan = false;
 
         if (mState == NOT_INITIALIZED) {
             if (mSensor == System::STEREO || mSensor == System::RGBD) {
-//// *
                 Rotation_cm = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
 
                 StereoInitialization_zzw();
@@ -240,7 +236,6 @@ namespace Planar_SLAM {
                 //Rotation_cm=SeekManhattanFrame(mCurrentFrame.vSurfaceNormal,mCurrentFrame.mVF3DLines).clone();
                 Rotation_cm = TrackManhattanFrame(Rotation_cm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
                 mLastRcm = Rotation_cm.clone();
-///* /
 //                StereoInitialization_zzw();
             } else
                 MonocularInitialization();
@@ -258,48 +253,8 @@ namespace Planar_SLAM {
             // mbOnlyTracking等于false表示正常SLAM模式（定位+地图更新），mbOnlyTracking等于true表示仅定位模式
             // tracking 类构造时默认为false。有个开关ActivateLocalizationMode，可以控制是否开启mbOnlyTracking
 
-/*
             if (!mbOnlyTracking) {
-/*
-                PlaneMatcher pmatcher(mfDThRef, mfAThRef, mfVerTh, mfParTh);
-                if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2) {
-                    mCurrentFrame.SetPose(mLastFrame.mTcw);
-                } else {
-                    mCurrentFrame.SetPose(mVelocity * mLastFrame.mTcw);
-                }
-                pmatcher.SearchMapByCoefficients(mCurrentFrame, mpMap->GetAllMapPlanes());
-                bManhattan = DetectManhattan();
-                cout<<"bManhattan  "<<bManhattan<<endl;
-* /
-                mUpdateMF = true;
 
-//                cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
-//                cv::Mat MF_can_T = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
-//                MF_can = TrackManhattanFrame(mLastRcm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
-//
-//                MF_can.copyTo(mLastRcm);//.clone();
-//                MF_can_T = MF_can.t();
-//                mRotation_wc = Rotation_cm * MF_can_T;
-//                mRotation_wc = mRotation_wc.t();
-
-                CheckReplacedInLastFrame();
-
-                if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2) {
-                    bOK = TranslationEstimation();
-
-                } else {
-                    bOK = TrackWithSparseAlignment();
-//                    if (!bOK)
-//                        bOK = TranslationWithMotionModel();
-                    if (!bOK)
-                        bOK = TranslationEstimation();
-                }
-
-            }
-*/
-
-            if (!mbOnlyTracking) {
-//// *
                 PlaneMatcher pmatcher(mfDThRef, mfAThRef, mfVerTh, mfParTh);
 
                 if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2) {
@@ -312,7 +267,7 @@ namespace Planar_SLAM {
 
                 bManhattan = DetectManhattan();
                 cout<<"bManhattan "<<bManhattan<<endl;
-///* /
+
                 mUpdateMF = true;
 //// *
                 cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
@@ -330,24 +285,21 @@ namespace Planar_SLAM {
                 //局部建图线程则可能会对原有的地图点进行替换.在这里进行检查
                 CheckReplacedInLastFrame();
 
-////*
-
                 if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2) {
                     bOK = TranslationEstimation_MW();
+                    if (!bOK) {
+                        mCurrentFrame.SetPose(mLastFrame.mTcw);
+                    }
                 } else {
-//                    bOK = TranslationWithMotionModel_MW();
 //                    bOK = TranslationWithMotionModel();
                     bOK = TrackWithSparseAlignment();
-//                    bOK = TrackWithMotionModel();
                     if (!bOK) {
-                        bOK = TranslationWithMotionModel_MW();
+                        bOK = TranslationWithMotionModel();
+                        if (!bOK)
+                            bOK = TranslationEstimation_MW();
                     }
                 }
-
-///* /
             }
-
-            SparseAlignmentTcw_ = mCurrentFrame.mTcw.clone();
 
             // 将最新的关键帧作为当前帧的参考关键帧
             mCurrentFrame.mpReferenceKF = mpReferenceKF;
@@ -366,7 +318,6 @@ namespace Planar_SLAM {
 //// *
             // update rotation from manhattan
             cv::Mat new_Rotation_wc = mCurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3).t();
-//            cv::Mat new_Rotation_wc = mRotation_wc.t();
             cv::Mat Rotation_mc = Rotation_cm.t();
             cv::Mat MF_can_T;
             MF_can_T = Rotation_mc * new_Rotation_wc;
@@ -540,9 +491,6 @@ namespace Planar_SLAM {
             if (tem.empty()){
                 tem = cv::Mat::eye(3,3,CV_32F);
             }
-            mRotation_wx_list.push_back(tem);
-            SparseAlignmentTcw.push_back(SparseAlignmentTcw_);
-            ifFindM.push_back(bManhattan);
         } else {
             // This can happen if tracking is lost
             // 如果跟踪失败，则相对位姿使用上一次值
@@ -2491,7 +2439,7 @@ namespace Planar_SLAM {
     }
 
     bool Tracking::TranslationEstimation_MW() {
-        cout<<"TranslationEstimation+++++++++++++++++++++++++++++++"<<endl;
+        cout<<"TranslationEstimation_MW+++++++++++++++++++++++++++++++"<<endl;
 
         // Compute Bag of Words vector
         //将当前帧的描述子转化为BoW向量
@@ -2534,8 +2482,8 @@ namespace Planar_SLAM {
 
         //优化误差函数获取位姿
         //cout << "translation reference,pose before opti" << mCurrentFrame.mTcw << endl;
-//        Optimizer::TranslationOptimization(&mCurrentFrame);
-        Optimizer::PoseOptimization(&mCurrentFrame);
+        Optimizer::TranslationOptimization(&mCurrentFrame);
+//        Optimizer::PoseOptimization(&mCurrentFrame);
 //        if (bManhattan)
 //            Optimizer::TranslationOptimization(&mCurrentFrame);
 //        else
@@ -2678,8 +2626,7 @@ namespace Planar_SLAM {
 
 
         //cout << "translation motion model,pose before opti" << mCurrentFrame.mTcw << endl;
-//        Optimizer::TranslationOptimization(&mCurrentFrame);
-        Optimizer::PoseOptimization(&mCurrentFrame);
+        Optimizer::TranslationOptimization(&mCurrentFrame);
         //cout << "translation motion model,pose after opti" << mCurrentFrame.mTcw << endl;
 
 
@@ -3079,9 +3026,9 @@ cout<<"不会进行后面的操作"<<endl;
     bool Tracking::TrackLocalMap()  {
         PlaneMatcher pmatcher(mfDThRef, mfAThRef, mfVerTh, mfParTh);
 ///ygz
-        if (mvpLocalMapPoints.size() == 0){
+//        if (mvpLocalMapPoints.size() == 0){
             UpdateLocalMap();
-        }
+//        }
 
         thread threadPoints(&Tracking::SearchLocalPoints, this);
         thread threadLines(&Tracking::SearchLocalLines, this);
@@ -3112,7 +3059,6 @@ cout<<"不会进行后面的操作"<<endl;
                     mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
             }
         }
-        cout<<"mnMatchesInliers>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"<<mnMatchesInliers<<endl;
 
         for (int i = 0; i < mCurrentFrame.NL; i++) {
             if (mCurrentFrame.mvpMapLines[i]) {
@@ -3156,7 +3102,8 @@ cout<<"不会进行后面的操作"<<endl;
             }
         }
 
-        UpdateLocalMap();
+//        UpdateLocalMap();
+        cout<<"mnMatchesInliers>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"<<mnMatchesInliers<<endl;
 
         // Decide if the tracking was succesful
         // More restrictive if there was a relocalization recently
@@ -3365,7 +3312,6 @@ cout<<"不会进行后面的操作"<<endl;
                     } else {
                         nLines++;
                     }
-
 //                    if (nLines > 20)
                     if (nLines > 50)
                         break;
@@ -3935,11 +3881,12 @@ int mvpMapPointsCount = 0;
         for (int i = 0; i < mLastFrame.N; i++)
             if (mLastFrame.mvpMapPoints[i] && !mLastFrame.mvpMapPoints[i]->isBad() && !mLastFrame.mvbOutlier[i])
                 inliers_in_last_frame++;
-        if (inliers_in_last_frame < 30) {
-            cout << "Last frame have less observations: " << inliers_in_last_frame
-                         << ", sparse alignment may have a erroneous result, return back to feature method." << endl;
-            return false;
-        }
+//        if (inliers_in_last_frame < 30) {
+//            cout << "Last frame have less observations: " << inliers_in_last_frame
+//                         << ", sparse alignment may have a erroneous result, return back to feature method." << endl;
+//            getchar();
+//            return false;
+//        }
 
         Sophus::SE3f TCR;
         Mat TCR_;
