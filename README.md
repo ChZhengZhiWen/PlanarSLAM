@@ -1,7 +1,7 @@
-# PlanarSLAM
+# Planar_SLAM_Semidirect
 This repo proposes a RGB-D SLAM system specifically designed for structured environments and aimed at improved tracking and mapping accuracy by relying on geometric features that are extracted from the surrounding. More details can be found in our papers ([RGB-D](https://arxiv.org/abs/2010.07997) and [Monocular](https://arxiv.org/abs/2008.01963)).  
 
-**Authors:** Yanyan Li, Raza Yunus, Nikolas Brasch, Nassir Navab and Federico Tombari
+**Authors:** Zhiwen Zheng, He Wang, Ru Li
 
 ### updated on 11.12.2021
 
@@ -116,14 +116,6 @@ inproceedings{Li2021PlanarSLAM,
   title = {RGB-D SLAM with Structural Regularities},
   year = {2021},
   booktitle = {2021 IEEE international conference on Robotics and automation (ICRA)},
- }
-```
-```
-inproceedings{Li2020SSLAM,
-  author = {Li, Yanyan and Brasch, Nikolas and Wang, Yida and Navab, Nassir and Tombari, Federico},
-  title = {Structure-SLAM: Low-Drift Monocular SLAM in Indoor Environments},
-  year = {2020},
-  booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
  }
 ```
 
