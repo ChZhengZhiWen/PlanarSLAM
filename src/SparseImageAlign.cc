@@ -89,8 +89,11 @@ cout<<"--------------------------------------------"<<endl;
 
             optimize(T_cur_from_ref,_chi2);
             cout<<endl;
-            if (_chi2 > 700 || n_meas_ < 2500)
+            if (_chi2 > 700 || n_meas_ < 2500){
+                cout<<"_chi2 > x || n_meas_ < y"<<endl;
                 return false;
+            }
+
         }
 
         TCR = T_cur_from_ref;
@@ -542,7 +545,7 @@ tem+=fabsf(res);
                         if(compute_weight_scale && iter_ != 0)
                         {
                             //weight = 2.0*fabsf(res) / (1.0+res2/scale_pt);
-                            weight = 1.0 / (1.0+fabsf(res)/scale_pt);
+/// zzw                            weight = 1.0 / (1.0+fabsf(res)/scale_pt);
                             //weight = weight_estimator.value(fabsf(res)/scale_pt);
                         }
                         else
