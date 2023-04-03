@@ -135,6 +135,8 @@ namespace Planar_SLAM {
         mfVerTh = fSettings["Plane.VerticalThreshold"];
         mfParTh = fSettings["Plane.ParallelThreshold"];
 
+        mfMFVerTh = fSettings["Plane.DetectManhattanThreshold"];
+
         manhattanCount = 0;
         fullManhattanCount = 0;
 
@@ -2137,6 +2139,20 @@ namespace Planar_SLAM {
         fullManhattanFound = false;
 
         int id1, id2, id3 = -1;
+
+
+//        if (mpMap->GetManObservations().size()!=0) {
+//            for (auto &mh : mpMap->GetManObservations()) {
+//                std::tuple<MapPlane *, MapPlane *, MapPlane *> planeVector = mh.first;
+//                MapPlane* p1 = get<0>(planeVector);
+//                MapPlane* p2 = get<1>(planeVector);
+//                MapPlane* p3 = get<2>(planeVector);
+//
+//            }
+//        }
+
+
+
         for (size_t i = 0; i < mCurrentFrame.mnPlaneNum; i++) {
             cv::Mat p3Dc1 = mCurrentFrame.mvPlaneCoefficients[i];
             MapPlane *pMP1 = mCurrentFrame.mvpMapPlanes[i];
@@ -4165,4 +4181,5 @@ int mvpMapPointsCount = 0;
         else
             return vector<std::pair<KeyFrame *, size_t> >(s.begin(), s.begin() + n);
     }
+
 } //namespace Planar_SLAM

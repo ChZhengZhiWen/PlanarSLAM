@@ -114,10 +114,6 @@ namespace Planar_SLAM
         bool mbAcceptKeyFrames;
         std::mutex mMutexAccept;
 
-        ///---------------------------------
-        float mfMFVerTh = 0.01;//应该放配置文件中的
-//        float mfMFVerTh = 0.08716;//改为pSLAM的参数
-
 
     };
 

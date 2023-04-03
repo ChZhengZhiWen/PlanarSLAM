@@ -74,6 +74,7 @@ namespace Planar_SLAM
                         CorrectLoop();
 unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
 mpTracker->loopStop = true;
+getchar();
 cout<<"loop stop -------------------------------"<<endl;
                     }
                 }

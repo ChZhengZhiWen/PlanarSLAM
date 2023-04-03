@@ -113,6 +113,10 @@ namespace Planar_SLAM
         void AddPartialManhattanObservation(MapPlane *pMP1, MapPlane *pMP2, KeyFrame *pKF);
         KeyFrame *GetPartialManhattanObservation(MapPlane *pMP1, MapPlane *pMP2);
 
+        Manhattans GetManObservations(){
+            return mmpManhattanObservations;
+        };
+
     protected:
         std::set<MapPoint*> mspMapPoints;
 

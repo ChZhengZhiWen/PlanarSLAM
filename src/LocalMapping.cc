@@ -251,6 +251,7 @@ namespace Planar_SLAM {
             }
         }
 
+        float mfMFVerTh = mpTracker->mfMFVerTh;
         for (size_t i = 0; i < mpCurrentKeyFrame->mnPlaneNum; i++) {
             cv::Mat p3Dc1 = mpCurrentKeyFrame->mvPlaneCoefficients[i];
             MapPlane *pMP1 = mpCurrentKeyFrame->mvpMapPlanes[i];
