@@ -91,7 +91,7 @@ namespace Planar_SLAM
 
         glLineWidth(mLineWidth);
         glBegin ( GL_LINES );
-        glColor3f(0.0,0.0,0.0); //红色
+        glColor3f(255,0.0,0.0); //红色
 
         for(set<MapLine*>::iterator sit=spRefMLs.begin(), send=spRefMLs.end(); sit!=send; sit++)
         {

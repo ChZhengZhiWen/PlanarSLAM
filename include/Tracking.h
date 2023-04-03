@@ -159,6 +159,9 @@ public:
 
     bool bManhattan;
 
+    std::mutex mMutexLoopStop;
+    bool loopStop;
+
 protected:
 
     // Main tracking function. It is independent of the input sensor.

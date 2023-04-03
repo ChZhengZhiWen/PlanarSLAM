@@ -72,6 +72,9 @@ namespace Planar_SLAM
                     {
                         // Perform loop fusion and pose graph optimization
                         CorrectLoop();
+                        //                    unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
+//                    mpTracker->loopStop = true;
+//                    cout<<"loop stop -------------------------------"<<endl;
                     }
                 }
             }

@@ -141,6 +141,9 @@ namespace Planar_SLAM {
         mpPointCloudMapping = make_shared<MeshViewer>(mpMap);
 
         failedNum = 0;
+
+        unique_lock<mutex> lock(mMutexLoopStop);
+        loopStop = false;
     }
 
 
@@ -157,6 +160,16 @@ namespace Planar_SLAM {
     }
 
     cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB, const cv::Mat &imD, const double &timestamp) {
+        {
+            unique_lock<mutex> lock(mMutexLoopStop);
+            if (loopStop){
+                cout<<"Track Stop -------------------"<<endl;
+                getchar();
+            }
+            loopStop = false;
+        }
+
+
         mImRGB = imRGB;
         mImGray = imRGB;
         mImDepth = imD;
@@ -1307,7 +1320,7 @@ namespace Planar_SLAM {
         vector<double> denTemp(3, 0.00001);
         for (int i = 0; i <1; i++) {
 
-            cv::Mat R_cm = R_cm_update;//cv::Mat::eye(cv::Size(3,3),CV_32FC1);  // 对角线为1的对角矩阵(3, 3, CV_32FC1);
+            cv::Mat R_cm = R_cm_update;
             int directionFound1 = 0;
             int directionFound2 = 0;
             int directionFound3 = 0; //三个方向

@@ -156,6 +156,8 @@ namespace Planar_SLAM {
         unique_lock<mutex> lock(mMutexMap);
         return mspMapPlanes.size();
     }
+#pragma GCC push_options
+#pragma GCC optimize("O0")
 
     cv::Mat Map::FindManhattan(Frame &pF, const float &verTh, bool out) {
         cv::Mat bestP1, bestP2;
@@ -181,10 +183,10 @@ namespace Planar_SLAM {
                               p1.at<float>(2) * p2.at<float>(2);
 
                 if(out)
-                    cout << j << ", p2 : " << p2.t() << endl;
+                    cout <<"plane  " << j << ", p2 : " << p2.t() << endl;
 
-//                if(out)
-//                    cout <<"plane_"<< j <<" and plane_"<< i << " , angle : " << angle << endl;
+                if(out)
+                    cout << "angle : " << angle << endl;
 
                 // vertical planes
                 if (angle < lverTh && angle > -lverTh && (pF.mvPlanePoints[i].size() + pF.mvPlanePoints[j].size()) > maxSize) {
@@ -340,11 +342,21 @@ namespace Planar_SLAM {
             cout << "loc1: " << loc1 << endl;
             cout << "loc2: " << loc2 << endl;
             cout << "loc3: " << loc3 << endl;
-
             cv::Mat first, second, third;
 
-            //loc1,loc2,loc3不会重复，我的理解是bestP1和bestP2是相互垂直的而p3是他们的叉积
             std::map<int, cv::Mat> sort;
+            if (loc1 == loc3 || loc2 == loc3){
+                cout<<"444444444444444444444444444"<<endl;
+                getchar();
+                sort[loc1] = bestP1;
+                sort[loc2] = bestP2;
+                if (loc1+loc2==1)
+                    sort[2] = p3;
+                else if (loc1+loc2==2)
+                    sort[1] = p3;
+                else
+                    sort[0] = p3;
+            }
             sort[loc1] = bestP1;
             sort[loc2] = bestP2;
             sort[loc3] = p3;
@@ -372,7 +384,7 @@ namespace Planar_SLAM {
         }
         return Rotation_cm;
     }
-
+#pragma GCC pop_options
     void Map::FlagMatchedPlanePoints(Planar_SLAM::Frame &pF, const float &dTh) {
 
         unique_lock<mutex> lock(mMutexMap);
