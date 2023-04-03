@@ -156,8 +156,6 @@ namespace Planar_SLAM {
         unique_lock<mutex> lock(mMutexMap);
         return mspMapPlanes.size();
     }
-#pragma GCC push_options
-#pragma GCC optimize("O0")
 
     cv::Mat Map::FindManhattan(Frame &pF, const float &verTh, bool out) {
         cv::Mat bestP1, bestP2;
@@ -384,7 +382,7 @@ namespace Planar_SLAM {
         }
         return Rotation_cm;
     }
-#pragma GCC pop_options
+
     void Map::FlagMatchedPlanePoints(Planar_SLAM::Frame &pF, const float &dTh) {
 
         unique_lock<mutex> lock(mMutexMap);
