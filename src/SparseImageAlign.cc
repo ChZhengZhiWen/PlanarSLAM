@@ -88,9 +88,9 @@ cout<<"--------------------------------------------"<<endl;
             seg_cache_.seg_ref_patch.clear();
 
             optimize(T_cur_from_ref,_chi2);
-            cout<<endl;
-            if (_chi2 > 700 || n_meas_ < 2500){
-                cout<<"_chi2 > x || n_meas_ < y"<<endl;
+//            cout<<endl;
+            if (_chi2 > 700 || n_meas_ < 1500){
+                cout<<"_chi2:" <<_chi2<<" > x || n_meas_ < y:"<<n_meas_<<endl;
                 return false;
             }
 

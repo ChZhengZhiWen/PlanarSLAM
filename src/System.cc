@@ -43,6 +43,15 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
     clock_t tStart = clock();
     mpVocabulary = new ORBVocabulary();
+    mpVocabulary_line = new ORBVocabulary();
+
+    mpVocabulary_line->load("Vocabulary/mapir_lsd.yml");
+    if( mpVocabulary_line->empty())
+    {
+        cerr<<"Wrong path to vocabulary. "<<endl;
+        exit(-1);
+    }
+
     bool bVocLoad  = mpVocabulary->loadFromTextFile(strVocFile);
 	//else
 	 //   bVocLoad = mpVocabulary->loadFromBinaryFile(strVocFile);
@@ -56,6 +65,8 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     cout<<"Vocabulary loaded!"<<endl<<endl;
     //Create KeyFrame Database
     mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
+///zzw
+//    mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary , *mpVocabulary_line);
     //Create the Map
     mpMap = new Map();
     //Create Drawers. These are used by the Viewer
@@ -68,7 +79,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     //mpPointCloudMapping = make_shared<PointCloudMapping>( resolution );
 
     mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,
-                             mpMap, mpKeyFrameDatabase, strSettingsFile, mSensor);
+                             mpMap, mpKeyFrameDatabase, strSettingsFile, mSensor, mpVocabulary_line);
 
     //Initialize the Local Mapping thread and launch
     mpLocalMapper = new LocalMapping(mpMap, mSensor==MONOCULAR);
@@ -77,7 +88,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mptLocalMapping = new thread(&Planar_SLAM::LocalMapping::Run_zzw, mpLocalMapper);
 
     //Initialize the Loop Closing thread and launch
-    mpLoopCloser = new LoopClosing(mpMap, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR);
+    mpLoopCloser = new LoopClosing(mpMap, mpKeyFrameDatabase, mpVocabulary,mpVocabulary_line, mSensor!=MONOCULAR);
     mptLoopClosing = new thread(&Planar_SLAM::LoopClosing::Run, mpLoopCloser);
 
     //Initialize the Viewer thread and launch
@@ -322,6 +333,41 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
 
     f.close();
     cout << endl << "trajectory saved!" << endl;
+
+    string tem = "manhattanForLoop.txt";
+    ofstream f1;
+    f1.open(tem.c_str());
+    f1 << fixed;
+    for(size_t i=0; i<vpKFs.size(); i++)
+    {
+        KeyFrame* pKF = vpKFs[i];
+
+        if(pKF->isBad())
+            continue;
+
+//        auto manhattan = pKF->mvManhattanForLoop;
+//
+//        f1 << setprecision(4) << pKF->mnId << setprecision(3) << " " << manhattan[0].at<float>(0) << " " << manhattan[0].at<float>(1) << " " << manhattan[0].at<float>(2)<<endl;
+//        f1 << setprecision(3) << " " << manhattan[1].at<float>(0) << " " << manhattan[1].at<float>(1) << " " << manhattan[1].at<float>(2)<<endl;
+//        f1 << setprecision(3) << " " << manhattan[2].at<float>(0) << " " << manhattan[2].at<float>(1) << " " << manhattan[2].at<float>(2)<<endl;
+
+        auto manhattanR_wm = pKF->mManhattan_Rotation_cm;
+        manhattanR_wm = pKF->GetPoseInverse().rowRange(0, 3).colRange(0, 3) * manhattanR_wm;
+        f1 << pKF->mnId <<" " << manhattanR_wm.at<float>(0,0)<<" " << manhattanR_wm.at<float>(0,1)<<" " << manhattanR_wm.at<float>(0,2) << endl;
+        f1 << manhattanR_wm.at<float>(1,0)<<" " << manhattanR_wm.at<float>(1,1)<<" " << manhattanR_wm.at<float>(1,2) << endl;
+        f1 << manhattanR_wm.at<float>(2,0)<<" " << manhattanR_wm.at<float>(2,1)<<" " << manhattanR_wm.at<float>(2,2) << endl;
+    }
+    f1.close();
+
+//    string name = "kfImg.txt";
+//    ofstream f2;
+//    f2.open(name.c_str());
+//    f2 << fixed;
+//    vector<cv::Mat> loopKf = mpLoopCloser->kfImg;
+//    for (const auto& img:loopKf) {
+//        f2 << img << endl;
+//    }
+//    f2.close();
 }
 
 void System::SaveMesh(const string&filename){

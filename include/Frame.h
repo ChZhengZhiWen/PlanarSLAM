@@ -56,7 +56,9 @@ namespace Planar_SLAM
         Frame(const Frame &frame);
 
         // Constructor for RGB-D cameras.
-        Frame(const cv::Mat &imRGB, const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, const float &depthMapFactor);
+        Frame(const cv::Mat &imRGB, const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp,
+              ORBextractor *extractor, ORBVocabulary *voc, cv::Mat &K, cv::Mat &distCoef, const float &bf,
+              const float &thDepth, const float &depthMapFactor,ORBVocabulary *voc_line);
         // Extract ORB on the image. 0 for left image and 1 for right image.
         void ExtractORB(int flag, const cv::Mat &im);
 
@@ -147,6 +149,8 @@ namespace Planar_SLAM
     public:
         // Vocabulary used for relocalization.
         ORBVocabulary* mpORBvocabulary;
+
+        ORBVocabulary* mpORBvocabulary_line;
 
         // Feature extractor. The right is used only in the stereo case.
         ORBextractor* mpORBextractorLeft, *mpORBextractorRight;
@@ -295,6 +299,8 @@ namespace Planar_SLAM
 
         vector<int> mvMatchedFrom;  // 标识每个特征点是从哪个Keyframe选取的
 
+        vector<cv::Mat> mvManhattanForLoop;
+        cv::Mat mManhattan_Rotation_cm;
 
     private:
 

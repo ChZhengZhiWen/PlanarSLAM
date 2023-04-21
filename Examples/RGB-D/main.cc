@@ -97,7 +97,8 @@ int main(int argc, char **argv)
         if(ttrack<T)
             usleep((T-ttrack)*1e5);
 
-//        getchar();
+//        if(ni%300==0 && ni!=0 && ni > 1900)
+//            getchar();
     }
 
     // Stop all threads

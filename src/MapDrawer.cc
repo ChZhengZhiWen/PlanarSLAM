@@ -74,34 +74,151 @@ namespace Planar_SLAM
         if(vpMLs.empty())
             return;
 
-        glLineWidth(mLineWidth);
-        glBegin ( GL_LINES );
-        glColor3f(0.0,0.0,0.0);
+//        glLineWidth(mLineWidth);
+//        glBegin ( GL_LINES );
+//        glColor3f(0.0,0.0,0.0);
+//
+//        for(size_t i=0, iend=vpMLs.size(); i<iend; i++)
+//        {
+//            if(vpMLs[i]->isBad() || spRefMLs.count(vpMLs[i]))
+//                continue;
+//            Vector6d pos = vpMLs[i]->GetWorldPos();
+//            glVertex3f(pos(0), pos(1), pos(2));
+//            glVertex3f(pos(3), pos(4), pos(5));
+//
+//        }
+//        glEnd();
 
-        for(size_t i=0, iend=vpMLs.size(); i<iend; i++)
-        {
-            if(vpMLs[i]->isBad() || spRefMLs.count(vpMLs[i]))
-                continue;
-            Vector6d pos = vpMLs[i]->GetWorldPos();
-            glVertex3f(pos(0), pos(1), pos(2));
-            glVertex3f(pos(3), pos(4), pos(5));
+//        glLineWidth(mLineWidth);
+//        glBegin ( GL_LINES );
+//        glColor3f(255,0.0,0.0); //红色
+//cout<<"*********************************"<<endl;
+//        for(set<MapLine*>::iterator sit=spRefMLs.begin(), send=spRefMLs.end(); sit!=send; sit++)
+//        {
+//            if((*sit)->isBad())
+//                continue;
+//            Vector6d pos = (*sit)->GetWorldPos();
+//            glVertex3f(pos(0), pos(1), pos(2));
+//            glVertex3f(pos(3), pos(4), pos(5));
+//            cout<<pos<<endl<<endl;
+//        }
+//        glEnd();
+//cout<<"*********************************"<<endl;
 
+        const vector<KeyFrame*> vpKFs = mpMap->GetAllKeyFrames();
+        for(size_t i=0; i<vpKFs.size(); i++){
+            KeyFrame* pKF = vpKFs[i];
+            if (i == vpKFs.size()-1){
+
+                auto tem = pKF->mvManhattanForLoop;
+                glLineWidth(1);
+                glBegin ( GL_LINES );
+                glColor3f(255,0.0,0.0); //红色
+                glVertex3f(0.0, 0.0, 0.0);
+                glVertex3f(tem[0].at<float>(0) ,tem[0].at<float>(1) ,tem[0].at<float>(2));
+                glEnd();
+                glLineWidth(1);
+                glBegin ( GL_LINES );
+                glColor3f(0.0,255,0.0); //红色
+                glVertex3f(0.0, 0.0, 0.0);
+                glVertex3f(tem[1].at<float>(0) ,tem[1].at<float>(1) ,tem[1].at<float>(2));
+                glEnd();
+                glLineWidth(1);
+                glBegin ( GL_LINES );
+                glColor3f(0.0,0.0,255); //红色
+                glVertex3f(0.0, 0.0, 0.0);
+                glVertex3f(tem[2].at<float>(0) ,tem[2].at<float>(1) ,tem[2].at<float>(2));
+                glEnd();
+
+                for (int j = 0; j < pKF->mvLines3D.size(); ++j) {
+                    Vector6d lineVector = pKF->obtain3DLine(j);
+
+                    cv::Mat startPoint = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+                    cv::Mat endPoint = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+
+                    startPoint.at<float>(0, 0) = lineVector[0];
+                    startPoint.at<float>(1, 0) = lineVector[1];
+                    startPoint.at<float>(2, 0) = lineVector[2];
+                    endPoint.at<float>(0, 0) = lineVector[3];
+                    endPoint.at<float>(1, 0) = lineVector[4];
+                    endPoint.at<float>(2, 0) = lineVector[5];
+
+                    cv::Mat mapLine = startPoint - endPoint;
+
+                    if (mapLine.at<float>(0) == 0 && mapLine.at<float>(1) == 0 && mapLine.at<float>(2) == 0)
+                        continue;
+
+                    mapLine /= cv::norm(mapLine);
+
+                    float angle1 = mapLine.at<float>(0) * tem[0].at<float>(0) +
+                                  mapLine.at<float>(1) * tem[0].at<float>(1) +
+                                  mapLine.at<float>(2) * tem[0].at<float>(2);
+                    float angle2 = mapLine.at<float>(0) * tem[1].at<float>(0) +
+                                  mapLine.at<float>(1) * tem[1].at<float>(1) +
+                                  mapLine.at<float>(2) * tem[1].at<float>(2);
+                    float angle3 = mapLine.at<float>(0) * tem[2].at<float>(0) +
+                                  mapLine.at<float>(1) * tem[2].at<float>(1) +
+                                  mapLine.at<float>(2) * tem[2].at<float>(2);
+                    float parallelThr = 0.86603 ;
+                    if (angle1 > parallelThr || angle1 < - parallelThr){
+                        glLineWidth(1);
+                        glBegin ( GL_LINES );
+                        glColor3f(255,0.0,0.0);
+                        glVertex3f(lineVector[0],lineVector[1],lineVector[2]);
+                        glVertex3f(lineVector[3],lineVector[4],lineVector[5]);
+                        glEnd();
+                    }
+                    else if (angle2 > parallelThr || angle2 < - parallelThr){
+                        glLineWidth(1);
+                        glBegin ( GL_LINES );
+                        glColor3f(0.0,255,0.0);
+                        glVertex3f(lineVector[0],lineVector[1],lineVector[2]);
+                        glVertex3f(lineVector[3],lineVector[4],lineVector[5]);
+                        glEnd();
+                    }
+                    else if (angle3 > parallelThr || angle3 < - parallelThr){
+                        glLineWidth(1);
+                        glBegin ( GL_LINES );
+                        glColor3f(0.0,0.0,255);
+                        glVertex3f(lineVector[0],lineVector[1],lineVector[2]);
+                        glVertex3f(lineVector[3],lineVector[4],lineVector[5]);
+                        glEnd();
+                    }
+
+
+
+
+                }
+            }
         }
-        glEnd();
 
-        glLineWidth(mLineWidth);
-        glBegin ( GL_LINES );
-        glColor3f(255,0.0,0.0); //红色
-
-        for(set<MapLine*>::iterator sit=spRefMLs.begin(), send=spRefMLs.end(); sit!=send; sit++)
-        {
-            if((*sit)->isBad())
-                continue;
-            Vector6d pos = (*sit)->GetWorldPos();
-            glVertex3f(pos(0), pos(1), pos(2));
-            glVertex3f(pos(3), pos(4), pos(5));
-        }
-        glEnd();
+//        glLineWidth(1);
+//        glBegin ( GL_LINES );
+//        glColor3f(255,0.0,0.0); //红色
+//
+//        glVertex3f(0.0, 0.0, 0.0);
+//        glVertex3f(0.987295 ,-0.0417315 ,0.152679);
+//
+//        glVertex3f(0.0, 0.0, 0.0);
+//        glVertex3f(-0.0292084 ,0.900017 ,0.434876);
+//
+//        glVertex3f(0.0, 0.0, 0.0);
+//        glVertex3f(-0.155971 ,-0.421205 ,0.893454);
+//        glEnd();
+//
+//        glLineWidth(1);
+//        glBegin ( GL_LINES );
+//        glColor3f(0.0,255,0.0); //红色
+//
+//        glVertex3f(0.0, 0.0, 0.0);
+//        glVertex3f(0.99661 ,0.041096 ,-0.0712768);
+//
+//        glVertex3f(0.0, 0.0, 0.0);
+//        glVertex3f(-0.00182036 ,0.869643 ,0.493678);
+//
+//        glVertex3f(0.0, 0.0, 0.0);
+//        glVertex3f(0.0822735 ,-0.491874 ,0.866769);
+//        glEnd();
     }
 
     void MapDrawer::DrawMapPlanes() {

@@ -11,6 +11,7 @@
 #include "PlaneExtractor.h"
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/core/core.hpp>
+
 using namespace std;
 using namespace cv;
 using namespace cv::line_descriptor;
@@ -19,11 +20,11 @@ using namespace Eigen;
 namespace Planar_SLAM {
     PlaneDetection plane_detection;
 
-    Tracking::Tracking(System *pSys, ORBVocabulary *pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Map *pMap,
-                       KeyFrameDatabase *pKFDB, const string &strSettingPath, const int sensor) :
+    Tracking::Tracking(System* pSys, ORBVocabulary* pVoc, FrameDrawer* pFrameDrawer, MapDrawer* pMapDrawer, Map* pMap,
+                       KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor,ORBVocabulary *lVoc) :
             mState(NO_IMAGES_YET), mSensor(sensor), mbOnlyTracking(false), mbVO(false), mpORBVocabulary(pVoc),
             mpKeyFrameDB(pKFDB), mpInitializer(static_cast<Initializer *>(NULL)), mpSystem(pSys),
-            mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpMap(pMap), mnLastRelocFrameId(0) {
+            mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpMap(pMap), mnLastRelocFrameId(0), mpORBVocabulary_line(lVoc) {
         // Load camera parameters from settings file
 
         cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
@@ -164,8 +165,8 @@ namespace Planar_SLAM {
     cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB, const cv::Mat &imD, const double &timestamp) {
         {
             unique_lock<mutex> lock(mMutexLoopStop);
-            if (loopStop){
-                cout<<"Track Stop -------------------"<<endl;
+            if (loopStop) {
+                cout << "Track Stop -------------------" << endl;
                 getchar();
             }
             loopStop = false;
@@ -192,7 +193,7 @@ namespace Planar_SLAM {
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
 
         mCurrentFrame = Frame(mImRGB, mImGray, mImDepth, timestamp, mpORBextractorLeft, mpORBVocabulary, mK,
-                              mDistCoef, mbf, mThDepth, mDepthMapFactor);
+                              mDistCoef, mbf, mThDepth, mDepthMapFactor,mpORBVocabulary_line);
         std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
 
         if (mDepthMapFactor != 1 || mImDepth.type() != CV_32F) {
@@ -203,16 +204,16 @@ namespace Planar_SLAM {
         Track_zzw();
 
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
-        double t12= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+        double t12 = std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
         double featureT = std::chrono::duration_cast<std::chrono::duration<double> >(t3 - t1).count();
         double trackT = getTrackTime();
 
         std::ofstream fileWrite12("total_plp.txt", std::ios::app);
         std::ofstream fileWriteTrack("Track_plp.txt", std::ios::app);
         std::ofstream fileWriteFeature("Feature_plp.txt", std::ios::app);
-        fileWrite12<<t12<<endl;
-        fileWriteTrack<<trackT<<endl;
-        fileWriteFeature<<featureT<<endl;
+        fileWrite12 << t12 << endl;
+        fileWriteTrack << trackT << endl;
+        fileWriteFeature << featureT << endl;
         //fileWrite12.write((char*) &trackT, sizeof(double));
         fileWrite12.close();
         fileWriteTrack.close();
@@ -251,7 +252,11 @@ namespace Planar_SLAM {
                 //Rotation_cm=SeekManhattanFrame(mCurrentFrame.vSurfaceNormal,mCurrentFrame.mVF3DLines).clone();
                 Rotation_cm = TrackManhattanFrame(Rotation_cm, mCurrentFrame.vSurfaceNormal, mCurrentFrame.mVF3DLines).clone();
                 mLastRcm = Rotation_cm.clone();
-//                StereoInitialization_zzw();
+
+//                auto keyFrame = mpMap->GetAllKeyFrames();
+//                addManhattanForLoop(mCurrentFrame);
+//                keyFrame[0]->mvManhattanForLoop = mCurrentFrame.mvManhattanForLoop;
+//                keyFrame[0]->mManhattan_Rotation_cm = mCurrentFrame.mManhattan_Rotation_cm;
             } else
                 MonocularInitialization();
             //更新帧绘制器中存储的最新状态
@@ -281,7 +286,7 @@ namespace Planar_SLAM {
                 pmatcher.SearchMapByCoefficients(mCurrentFrame, mpMap->GetAllMapPlanes());
 
                 bManhattan = DetectManhattan();
-                cout<<"bManhattan "<<bManhattan<<endl;
+//                cout << "bManhattan " << bManhattan << endl;
 
                 mUpdateMF = true;
 //// *
@@ -447,7 +452,7 @@ namespace Planar_SLAM {
 
                 std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
 
-                ttrack_34= std::chrono::duration_cast<std::chrono::duration<double> >(t4 - t3).count();
+                ttrack_34 = std::chrono::duration_cast<std::chrono::duration<double> >(t4 - t3).count();
 
 
                 // We allow points with high innovation (considererd outliers by the Huber Function)
@@ -486,9 +491,12 @@ namespace Planar_SLAM {
             mLastFrame = Frame(mCurrentFrame);
         }
 
+        if (mpReferenceKF->mvManhattanForLoop.empty())
+            addManhattanForLoop(mpReferenceKF);
+
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
 
-        ttrack_12= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+        ttrack_12 = std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
 
         trackTime = ttrack_12 - ttrack_34;
 
@@ -503,8 +511,8 @@ namespace Planar_SLAM {
 
             ///zzw
             cv::Mat tem = mRotation_wc.clone();
-            if (tem.empty()){
-                tem = cv::Mat::eye(3,3,CV_32F);
+            if (tem.empty()) {
+                tem = cv::Mat::eye(3, 3, CV_32F);
             }
         } else {
             // This can happen if tracking is lost
@@ -726,7 +734,7 @@ namespace Planar_SLAM {
 
                 std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
 
-                ttrack_34= std::chrono::duration_cast<std::chrono::duration<double> >(t4 - t3).count();
+                ttrack_34 = std::chrono::duration_cast<std::chrono::duration<double> >(t4 - t3).count();
 
 
                 // We allow points with high innovation (considererd outliers by the Huber Function)
@@ -767,7 +775,7 @@ namespace Planar_SLAM {
 
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
 
-        ttrack_12= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+        ttrack_12 = std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
 
         trackTime = ttrack_12 - ttrack_34;
 
@@ -807,42 +815,46 @@ namespace Planar_SLAM {
         vector<double> lambda_good;
         vector<cv::Point2d> m_j_selected;
         // R_cm_update matrix
-        cv::Mat R_cm_update=cv::Mat::eye(cv::Size(3,3),CV_32F);
-        cv::Mat R_cm_new=cv::Mat::eye(cv::Size(3,3),CV_32F);
+        cv::Mat R_cm_update = cv::Mat::eye(cv::Size(3, 3), CV_32F);
+        cv::Mat R_cm_new = cv::Mat::eye(cv::Size(3, 3), CV_32F);
 // initialization with random matrix
 #if 1
-        cv::Mat qu = cv::Mat::zeros(cv::Size(4,1),CV_32F);
+        cv::Mat qu = cv::Mat::zeros(cv::Size(4, 1), CV_32F);
         rnger.fill(qu, cv::RNG::UNIFORM, cv::Scalar::all(0.01), cv::Scalar::all(1));
         Eigen::Quaterniond qnorm;
-        Eigen::Quaterniond q(qu.at<float>(0,0),qu.at<float>(1,0),qu.at<float>(2,0),qu.at<float>(3,0));//=Eigen::MatrixXd::Random(1, 4);
-        qnorm.x()=q.x()/q.norm();qnorm.y()=q.y()/q.norm();
-        qnorm.z()=q.z()/q.norm();qnorm.w()=q.w()/q.norm();
-        cv::eigen2cv(qnorm.matrix(),R_cm_update);//	eigen2cv(m, img);;*/
+        Eigen::Quaterniond q(qu.at<float>(0, 0), qu.at<float>(1, 0), qu.at<float>(2, 0),
+                             qu.at<float>(3, 0));//=Eigen::MatrixXd::Random(1, 4);
+        qnorm.x() = q.x() / q.norm();
+        qnorm.y() = q.y() / q.norm();
+        qnorm.z() = q.z() / q.norm();
+        qnorm.w() = q.w() / q.norm();
+        cv::eigen2cv(qnorm.matrix(), R_cm_update);//	eigen2cv(m, img);;*/
         //cout<<R_cm_update<<endl;
-        cv::SVD svd; cv::Mat U,W,VT;
-        svd.compute(R_cm_update,W,U,VT);
-        R_cm_update=U*VT;
+        cv::SVD svd;
+        cv::Mat U, W, VT;
+        svd.compute(R_cm_update, W, U, VT);
+        R_cm_update = U * VT;
         //cout<<000<<R_cm_update<<endl;
         // R_cm_Rec matrix
-        cv::Mat R_cm_Rec=cv::Mat::zeros(cv::Size(3,3),CV_32F);
+        cv::Mat R_cm_Rec = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
 
         cv::Mat R_cm_initial;
-        int  validMF=0;
+        int validMF = 0;
         //cout<<R_cm_update<<endl;
-        R_cm_new.at<float>(0,0) = R_cm_update.at<double>(0,0);
-        R_cm_new.at<float>(0,1) = R_cm_update.at<double>(0,1);
-        R_cm_new.at<float>(0,2) = R_cm_update.at<double>(0,2);
-        R_cm_new.at<float>(1,0) = R_cm_update.at<double>(1,0);
-        R_cm_new.at<float>(1,1) = R_cm_update.at<double>(1,1);
-        R_cm_new.at<float>(1,2) = R_cm_update.at<double>(1,2);
-        R_cm_new.at<float>(2,0) = R_cm_update.at<double>(2,0);
-        R_cm_new.at<float>(2,1) = R_cm_update.at<double>(2,1);
-        R_cm_new.at<float>(2,2) = R_cm_update.at<double>(2,2);
+        R_cm_new.at<float>(0, 0) = R_cm_update.at<double>(0, 0);
+        R_cm_new.at<float>(0, 1) = R_cm_update.at<double>(0, 1);
+        R_cm_new.at<float>(0, 2) = R_cm_update.at<double>(0, 2);
+        R_cm_new.at<float>(1, 0) = R_cm_update.at<double>(1, 0);
+        R_cm_new.at<float>(1, 1) = R_cm_update.at<double>(1, 1);
+        R_cm_new.at<float>(1, 2) = R_cm_update.at<double>(1, 2);
+        R_cm_new.at<float>(2, 0) = R_cm_update.at<double>(2, 0);
+        R_cm_new.at<float>(2, 1) = R_cm_update.at<double>(2, 1);
+        R_cm_new.at<float>(2, 2) = R_cm_update.at<double>(2, 2);
         //cout<<R_cm_new<<endl;
         //matTemp.convertTo(MatTemp2, CV_8U)
 #endif
 
-        R_cm_new = TrackManhattanFrame(R_cm_new, vTempSurfaceNormal,vVanishingDirection);
+        R_cm_new = TrackManhattanFrame(R_cm_new, vTempSurfaceNormal, vVanishingDirection);
         return R_cm_new;//vRotaionMatrix_good[0];
     }
 
@@ -1320,7 +1332,7 @@ namespace Planar_SLAM {
         cv::Mat R_cm_update = mLastRcm.clone();
         int isTracked = 0;
         vector<double> denTemp(3, 0.00001);
-        for (int i = 0; i <1; i++) {
+        for (int i = 0; i < 1; i++) {
 
             cv::Mat R_cm = R_cm_update;
             int directionFound1 = 0;
@@ -1483,7 +1495,7 @@ namespace Planar_SLAM {
 
             svd.compute(R_cm_update, W, U, VT);
 
-            R_cm_update = U* VT;
+            R_cm_update = U * VT;
             vDensity.clear();
             //acos()计算余弦值,trace()计算对角元素和
             if (acos((trace(R_cm.t() * R_cm_update)[0] - 1.0)) / 2 < 0.001) {
@@ -1574,9 +1586,9 @@ namespace Planar_SLAM {
 
                 if (z.first > 0 && z.second > 0) {
                     Vector6d line3D = mCurrentFrame.Obtain3DLine_zzw(i, mImDepth_CV_32F);
-                    Vector6d test ;
-                    test<<0.0,0.0,0.0,0.0,0.0,0.0;
-                    if (line3D.isApprox(test, 1e-5)){
+                    Vector6d test;
+                    test << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+                    if (line3D.isApprox(test, 1e-5)) {
                         continue;
                     }
 //                    if (line3D == static_cast<Vector6d>(NULL)) {
@@ -1597,7 +1609,7 @@ namespace Planar_SLAM {
             for (int i = 0; i < mCurrentFrame.mnPlaneNum; ++i) {
                 cv::Mat p3D = mCurrentFrame.ComputePlaneWorldCoeff(i);
                 MapPlane *pNewMP = new MapPlane(p3D, pKFini, mpMap);
-                pNewMP->AddObservation(pKFini,i);
+                pNewMP->AddObservation(pKFini, i);
                 pKFini->AddMapPlane(pNewMP, i);
                 pNewMP->UpdateCoefficientsAndPoints();
                 mpMap->AddMapPlane(pNewMP);
@@ -2458,7 +2470,7 @@ namespace Planar_SLAM {
 
         mnMatchesInliers = finalMatches;
 
-        if ( finalMatches < 3) {
+        if (finalMatches < 3) {
             cout << "TranslationEstimation: After: Not enough matches" << endl;
             mCurrentFrame.SetPose(mLastFrame.mTcw);
             return false;
@@ -2468,7 +2480,7 @@ namespace Planar_SLAM {
     }
 
     bool Tracking::TranslationEstimation_MW() {
-        cout<<"TranslationEstimation_MW+++++++++++++++++++++++++++++++"<<endl;
+        cout << "TranslationEstimation_MW+++++++++++++++++++++++++++++++" << endl;
 
         // Compute Bag of Words vector
         //将当前帧的描述子转化为BoW向量
@@ -2587,7 +2599,7 @@ namespace Planar_SLAM {
 
         mnMatchesInliers = finalMatches;
 
-        if ( finalMatches < 3) {
+        if (finalMatches < 3) {
             cout << "TranslationEstimation: After: Not enough matches" << endl;
             mCurrentFrame.SetPose(mLastFrame.mTcw);
             return false;
@@ -2634,7 +2646,7 @@ namespace Planar_SLAM {
         mCurrentFrame.mvpMapLines = vpMapLineMatches;
 
         // 如果匹配点太少，则扩大搜索半径再来一次
-        if (nmatches <50) {
+        if (nmatches < 50) {
             fill(mCurrentFrame.mvpMapPoints.begin(), mCurrentFrame.mvpMapPoints.end(), static_cast<MapPoint *>(NULL));
             nmatches = matcher.MatchORBPoints(mCurrentFrame, mLastFrame);
             mUpdateMF = true;
@@ -2651,7 +2663,7 @@ namespace Planar_SLAM {
         }
 
         // Optimize frame pose with all matches
-        mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0,3).colRange(0,3));
+        mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3));
 
 
         //cout << "translation motion model,pose before opti" << mCurrentFrame.mTcw << endl;
@@ -2726,7 +2738,7 @@ namespace Planar_SLAM {
 
         mnMatchesInliers = finalMatches;
 
-        if (nmatchesMap < 3 ||finalMatches < 3) {
+        if (nmatchesMap < 3 || finalMatches < 3) {
             cout << "TranslationWithMotionModel: After: Not enough matches" << endl;
             mCurrentFrame.SetPose(mVelocity * mLastFrame.mTcw);
             return false;
@@ -2765,7 +2777,7 @@ namespace Planar_SLAM {
         mCurrentFrame.mvpMapLines = vpMapLineMatches;
 
         // 如果匹配点太少，则扩大搜索半径再来一次
-        if (nmatches <50) {
+        if (nmatches < 50) {
             fill(mCurrentFrame.mvpMapPoints.begin(), mCurrentFrame.mvpMapPoints.end(), static_cast<MapPoint *>(NULL));
             nmatches = matcher.MatchORBPoints(mCurrentFrame, mLastFrame);
             mUpdateMF = true;
@@ -2783,7 +2795,7 @@ namespace Planar_SLAM {
 
         // Optimize frame pose with all matches
         if (bManhattan)
-            mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0,3).colRange(0,3));
+            mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3));
 
 
         //cout << "translation motion model,pose before opti" << mCurrentFrame.mTcw << endl;
@@ -2861,7 +2873,7 @@ namespace Planar_SLAM {
 
         mnMatchesInliers = finalMatches;
 
-        if (nmatchesMap < 3 ||finalMatches < 3) {
+        if (nmatchesMap < 3 || finalMatches < 3) {
             cout << "TranslationWithMotionModel: After: Not enough matches" << endl;
             mCurrentFrame.SetPose(mVelocity * mLastFrame.mTcw);
             return false;
@@ -2900,7 +2912,7 @@ namespace Planar_SLAM {
             cout << "Match is not enough, failed." << endl;
             return false;
         }
-        mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0,3).colRange(0,3));
+        mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3));
         // Optimize frame pose with all matches
         Optimizer::PoseOptimization(&mCurrentFrame);
 
@@ -2949,7 +2961,7 @@ namespace Planar_SLAM {
         // 如果上一帧为关键帧，或者单目的情况，以及不是定位模式时则退出
         if (mnLastKeyFrameId == mLastFrame.mnId || mSensor == System::MONOCULAR || !mbOnlyTracking)
             return;
-cout<<"不会进行后面的操作"<<endl;
+        cout << "不会进行后面的操作" << endl;
 
 //        对于双目或rgbd相机，为上一帧生成新的临时地图点
         // 注意这些地图点只是用来跟踪，不加入到地图中，跟踪完后会删除
@@ -3052,11 +3064,11 @@ cout<<"不会进行后面的操作"<<endl;
  * Step 5：决定是否跟踪成功
  */
 
-    bool Tracking::TrackLocalMap()  {
+    bool Tracking::TrackLocalMap() {
         PlaneMatcher pmatcher(mfDThRef, mfAThRef, mfVerTh, mfParTh);
 ///ygz
 //        if (mvpLocalMapPoints.size() == 0){
-            UpdateLocalMap();
+        UpdateLocalMap();
 //        }
 
         thread threadPoints(&Tracking::SearchLocalPoints, this);
@@ -3132,7 +3144,7 @@ cout<<"不会进行后面的操作"<<endl;
         }
 
 //        UpdateLocalMap();
-        cout<<"mnMatchesInliers>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"<<mnMatchesInliers<<endl;
+        cout << "mnMatchesInliers>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << mnMatchesInliers << endl;
 
         // Decide if the tracking was succesful
         // More restrictive if there was a relocalization recently
@@ -3312,7 +3324,7 @@ cout<<"不会进行后面的操作"<<endl;
             }
 
             if (!vLineDepthIdx.empty()) {
-                sort(vLineDepthIdx.begin(),vLineDepthIdx.end());
+                sort(vLineDepthIdx.begin(), vLineDepthIdx.end());
 
                 int nLines = 0;
                 for (size_t j = 0; j < vLineDepthIdx.size(); j++) {
@@ -3367,7 +3379,7 @@ cout<<"不会进行后面的操作"<<endl;
 
                 cv::Mat p3D = mCurrentFrame.ComputePlaneWorldCoeff(i);
                 MapPlane *pNewMP = new MapPlane(p3D, pKF, mpMap);
-                pNewMP->AddObservation(pKF,i);
+                pNewMP->AddObservation(pKF, i);
                 pKF->AddMapPlane(pNewMP, i);
                 pNewMP->UpdateCoefficientsAndPoints();
                 mpMap->AddMapPlane(pNewMP);
@@ -3561,7 +3573,7 @@ cout<<"不会进行后面的操作"<<endl;
     void Tracking::UpdateLocalKeyFrames() {
 // Each map point vote for the keyframes in which it has been observed
         map<KeyFrame *, int> keyframeCounter;
-int mvpMapPointsCount = 0;
+        int mvpMapPointsCount = 0;
         for (int i = 0; i < mCurrentFrame.N; i++) {
             if (mCurrentFrame.mvpMapPoints[i]) {
                 MapPoint *pMP = mCurrentFrame.mvpMapPoints[i];
@@ -3893,7 +3905,7 @@ int mvpMapPointsCount = 0;
         mbOnlyTracking = flag;
     }
 
-    void Tracking::SaveMesh(const string &filename){
+    void Tracking::SaveMesh(const string &filename) {
         //
         mpPointCloudMapping->SaveMeshModel(filename);
 
@@ -3920,19 +3932,19 @@ int mvpMapPointsCount = 0;
         Sophus::SE3f TCR;
         Mat TCR_;
 
-        if(bManhattan)
-            mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0,3).colRange(0,3));
+        if (bManhattan)
+            mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3));
 
         size_t ret = mpAlign->run(&mLastFrame, &mCurrentFrame, TCR);
 
         if (ret == false) {
             cout << "Failed. return back to feature methods" << endl;
             mCurrentFrame.SetPose(mVelocity * mLastFrame.mTcw);
-            cout<<"failedNum  "<<++failedNum<<endl;
+            cout << "failedNum  " << ++failedNum << endl;
             return false;
         }
 
-        eigen2cv(TCR.matrix(),TCR_);
+        eigen2cv(TCR.matrix(), TCR_);
         mCurrentFrame.SetPose(TCR_ * mLastFrame.mTcw);
         return true;
     }
@@ -3980,13 +3992,13 @@ int mvpMapPointsCount = 0;
             } else
                 noMapPoint++;
         }
-        cout<<"out "<<out<<endl;
-        cout<<"noMapPoint "<<noMapPoint<<endl<<endl;
+        cout << "out " << out << endl;
+        cout << "noMapPoint " << noMapPoint << endl << endl;
 
         auto count_all = mpMap->GetAllMapPoints().size();
         auto count_ref = mpMap->GetReferenceMapPoints().size();
-        cout<<"count_all "<<count_all<<"  count_ref "<<count_ref<<endl;
-        cout<<"mnMatchesInliers ]]]]]]]]]]]]]]]]]]]]]]]]"<<mnMatchesInliers<<endl;
+        cout << "count_all " << count_all << "  count_ref " << count_ref << endl;
+        cout << "mnMatchesInliers ]]]]]]]]]]]]]]]]]]]]]]]]" << mnMatchesInliers << endl;
 
         // 如果刚进行过重定位，且inlier数量太少（相比于没有重定位时更加严格）
         if (mCurrentFrame.mnId < mnLastRelocFrameId + mMaxFrames && mnMatchesInliers < 50) {
@@ -3996,7 +4008,7 @@ int mvpMapPointsCount = 0;
 
         // 为保证lastframe帧有足够的观测量，这里最好定高一些
         if (mnMatchesInliers < 30) {
-            cout<< "Track Local Map direct failed" << endl;
+            cout << "Track Local Map direct failed" << endl;
             mbDirectFailed = true;
             return false;
         } else {
@@ -4182,4 +4194,271 @@ int mvpMapPointsCount = 0;
             return vector<std::pair<KeyFrame *, size_t> >(s.begin(), s.begin() + n);
     }
 
+    void Tracking::addManhattanForLoop(KeyFrame *pF) {
+        cv::Mat bestP1, bestP2;
+        float lverTh = mfMFVerTh;
+        int maxSize = 0;
+
+        for (int i = 0; i < pF->mnPlaneNum; ++i) {
+            cv::Mat p1 = pF->mvPlaneCoefficients[i];
+
+            for (int j = i + 1; j < pF->mnPlaneNum; ++j) {
+                cv::Mat p2 = pF->mvPlaneCoefficients[j];
+
+                float angle = p1.at<float>(0) * p2.at<float>(0) +
+                              p1.at<float>(1) * p2.at<float>(1) +
+                              p1.at<float>(2) * p2.at<float>(2);
+
+                // vertical planes
+                if (angle < lverTh && angle > -lverTh &&
+                    (pF->mvPlanePoints[i].size() + pF->mvPlanePoints[j].size()) > maxSize) {
+                    maxSize = pF->mvPlanePoints[i].size() + pF->mvPlanePoints[j].size();
+
+                    if (bestP1.empty() || bestP2.empty()) {
+                        bestP1 = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+                        bestP2 = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+                    }
+
+                    bestP1.at<float>(0, 0) = p1.at<float>(0, 0);
+                    bestP1.at<float>(1, 0) = p1.at<float>(1, 0);
+                    bestP1.at<float>(2, 0) = p1.at<float>(2, 0);
+
+                    bestP2.at<float>(0, 0) = p2.at<float>(0, 0);
+                    bestP2.at<float>(1, 0) = p2.at<float>(1, 0);
+                    bestP2.at<float>(2, 0) = p2.at<float>(2, 0);
+                }
+            }
+        }
+
+        if (bestP1.empty() || bestP2.empty()) {
+            for (int i = 0; i < pF->mnPlaneNum; ++i) {
+                cv::Mat p = pF->ComputePlaneWorldCoeff(i);
+
+                for (int j = 0; j < pF->mvLines3D.size(); ++j) {
+                    Vector6d lineVector = pF->obtain3DLine(j);
+
+                    cv::Mat startPoint = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+                    cv::Mat endPoint = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+
+                    startPoint.at<float>(0, 0) = lineVector[0];
+                    startPoint.at<float>(1, 0) = lineVector[1];
+                    startPoint.at<float>(2, 0) = lineVector[2];
+                    endPoint.at<float>(0, 0) = lineVector[3];
+                    endPoint.at<float>(1, 0) = lineVector[4];
+                    endPoint.at<float>(2, 0) = lineVector[5];
+
+                    cv::Mat line = startPoint - endPoint;
+                    //单位向量
+                    line /= cv::norm(line);
+
+                    float angle = p.at<float>(0, 0) * line.at<float>(0, 0) +
+                                  p.at<float>(1, 0) * line.at<float>(1, 0) +
+                                  p.at<float>(2, 0) * line.at<float>(2, 0);
+
+//                    if(out)
+//                        cout <<"line_"<< j <<" and plane_"<<  i << " , angle : " << angle << endl;
+
+                    if (angle < lverTh && angle > -lverTh) {
+                        lverTh = abs(angle);
+
+                        if (bestP1.empty() || bestP2.empty()) {
+                            bestP1 = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+                            bestP2 = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+                        }
+
+                        bestP1.at<float>(0, 0) = p.at<float>(0, 0);
+                        bestP1.at<float>(1, 0) = p.at<float>(1, 0);
+                        bestP1.at<float>(2, 0) = p.at<float>(2, 0);
+
+                        bestP2.at<float>(0, 0) = line.at<float>(0, 0);
+                        bestP2.at<float>(1, 0) = line.at<float>(1, 0);
+                        bestP2.at<float>(2, 0) = line.at<float>(2, 0);
+                    }
+                }
+            }
+        }
+
+        cv::Mat manhattan_Rotation_cm;
+        manhattan_Rotation_cm = cv::Mat::eye(cv::Size(3, 3), CV_32F);
+
+        if (!bestP1.empty() && !bestP2.empty()) {
+
+            int loc1;
+            float max1 = 0;
+            for (int i = 0; i < 3; i++) {
+                float val = bestP1.at<float>(i);
+                if (val < 0)
+                    val = -val;
+                if (val > max1) {
+                    loc1 = i;
+                    max1 = val;
+                }
+            }
+
+            if (bestP1.at<float>(loc1) < 0) {
+                bestP1 = -bestP1;
+            }
+
+            int loc2;
+            float max2 = 0;
+            for (int i = 0; i < 3; i++) {
+                float val = bestP2.at<float>(i);
+                if (val < 0)
+                    val = -val;
+                if (val > max2) {
+                    loc2 = i;
+                    max2 = val;
+                }
+            }
+
+            if (bestP2.at<float>(loc2) < 0) {
+                bestP2 = -bestP2;
+            }
+
+            cv::Mat p3;
+
+            p3 = bestP1.cross(bestP2);
+
+            int loc3;
+            float max3 = 0;
+            for (int i = 0; i < 3; i++) {
+                float val = p3.at<float>(i);
+                if (val < 0)
+                    val = -val;
+                if (val > max3) {
+                    loc3 = i;
+                    max3 = val;
+                }
+            }
+
+            if (p3.at<float>(loc3) < 0) {
+                p3 = -p3;
+            }
+
+            std::map<int, cv::Mat> sort;
+            if (loc1 == loc2 || loc1 == loc3 || loc2 == loc3) {
+                if (loc1 == loc2) {
+                    sort[loc1] = bestP1;
+                    sort[loc3] = p3;
+                    if (loc1 + loc3 == 1)
+                        sort[2] = bestP2;
+                    else if (loc1 + loc3 == 2)
+                        sort[1] = bestP2;
+                    else
+                        sort[0] = bestP2;
+                }
+                sort[loc1] = bestP1;
+                sort[loc2] = bestP2;
+                if (loc1 + loc2 == 1)
+                    sort[2] = p3;
+                else if (loc1 + loc2 == 2)
+                    sort[1] = p3;
+                else
+                    sort[0] = p3;
+            }
+            sort[loc1] = bestP1;
+            sort[loc2] = bestP2;
+            sort[loc3] = p3;
+
+            pF->mvManhattanForLoop.push_back(sort[0]);
+            pF->mvManhattanForLoop.push_back(sort[1]);
+            pF->mvManhattanForLoop.push_back(sort[2]);
+
+            cv::Mat first, second, third;
+            first = sort[0];
+            second = sort[1];
+            third = sort[2];
+
+            // todo: refine this part
+            manhattan_Rotation_cm.at<float>(0, 0) = first.at<float>(0, 0);
+            manhattan_Rotation_cm.at<float>(1, 0) = first.at<float>(1, 0);
+            manhattan_Rotation_cm.at<float>(2, 0) = first.at<float>(2, 0);
+            manhattan_Rotation_cm.at<float>(0, 1) = second.at<float>(0, 0);
+            manhattan_Rotation_cm.at<float>(1, 1) = second.at<float>(1, 0);
+            manhattan_Rotation_cm.at<float>(2, 1) = second.at<float>(2, 0);
+            manhattan_Rotation_cm.at<float>(0, 2) = third.at<float>(0, 0);
+            manhattan_Rotation_cm.at<float>(1, 2) = third.at<float>(1, 0);
+            manhattan_Rotation_cm.at<float>(2, 2) = third.at<float>(2, 0);
+
+            cv::Mat U, W, VT;
+
+            cv::SVD::compute(manhattan_Rotation_cm, W, U, VT);
+
+            manhattan_Rotation_cm = U * VT;
+        }
+
+        manhattan_Rotation_cm.copyTo(pF->mManhattan_Rotation_cm);
+
+
+
+        vector<cv::Mat> parallelLine1, parallelLine2, parallelLine3;
+        for (int i = 0; i < 3; ++i) {
+            cv::Mat manhattanAxis = pF->mvManhattanForLoop[i];
+
+            for (int j = 0; j < pF->mvLines3D.size(); ++j) {
+                Vector6d lineVector = pF->obtain3DLine(j);
+
+                cv::Mat startPoint = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+                cv::Mat endPoint = cv::Mat::eye(cv::Size(1, 3), CV_32F);
+
+                startPoint.at<float>(0, 0) = lineVector[0];
+                startPoint.at<float>(1, 0) = lineVector[1];
+                startPoint.at<float>(2, 0) = lineVector[2];
+                endPoint.at<float>(0, 0) = lineVector[3];
+                endPoint.at<float>(1, 0) = lineVector[4];
+                endPoint.at<float>(2, 0) = lineVector[5];
+
+                cv::Mat mapLine = startPoint - endPoint;
+
+                if (mapLine.at<float>(0) == 0 && mapLine.at<float>(1) == 0 && mapLine.at<float>(2) == 0)
+                    continue;
+                //单位向量
+                mapLine /= cv::norm(mapLine);
+
+                float angle = mapLine.at<float>(0) * manhattanAxis.at<float>(0) +
+                              mapLine.at<float>(1) * manhattanAxis.at<float>(1) +
+                              mapLine.at<float>(2) * manhattanAxis.at<float>(2);
+
+                //0.86603 degree 30
+                //0.96593 degree 15
+                float parallelThr = 0.86603;
+                if (angle > parallelThr || angle < -parallelThr) {
+                    if (i == 0)
+                        parallelLine1.push_back(mapLine);
+                    else if (i == 1)
+                        parallelLine2.push_back(mapLine);
+                    else
+                        parallelLine3.push_back(mapLine);
+                }
+            }
+
+            vector<cv::Mat> parallelLine;
+            if (i == 0)
+                parallelLine = parallelLine1;
+            else if (i == 1)
+                parallelLine = parallelLine2;
+            else
+                parallelLine = parallelLine3;
+
+            float sum_chi2 = 0.0;
+            if (parallelLine.empty()) {
+                pF->line_manhattan_err.push_back(-1);
+            } else {
+                for (auto &it: parallelLine) {
+                    float angle = it.at<float>(0) * manhattanAxis.at<float>(0) +
+                                  it.at<float>(1) * manhattanAxis.at<float>(1) +
+                                  it.at<float>(2) * manhattanAxis.at<float>(2);
+                    if (angle < 0)
+                        it = -it;
+
+                    cv::Mat R_line, R_manhattan;
+                    cv::Rodrigues(it, R_line);
+                    cv::Rodrigues(manhattanAxis, R_manhattan);
+                    auto _chi2 = abs(acos((cv::trace(R_line.inv() * R_manhattan)[0] - 1.0) / 2.0));
+                    sum_chi2 += _chi2;
+                }
+                pF->line_manhattan_err.push_back(sum_chi2 / float(parallelLine.size()));
+            }
+        }
+    }
 } //namespace Planar_SLAM

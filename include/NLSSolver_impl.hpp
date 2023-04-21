@@ -85,7 +85,7 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
         chi2_ = new_chi2;
 
 //cout<<"\r"<<chi2_;
-cout<<"iter_ "<<iter_<<"  chi2_ "<<chi2_<<"================================================="<<endl;
+//cout<<"iter_ "<<iter_<<"  chi2_ "<<chi2_<<"================================================="<<endl;
 //if(iter_ +1 == n_iter_)
 //    cout<<endl;
 //getchar();
@@ -104,7 +104,7 @@ cout<<"iter_ "<<iter_<<"  chi2_ "<<chi2_<<"=====================================
 
         // stop when converged, i.e. update step too small
         if (norm_max(x_) <= eps_) {
-            cout<<"update step too small"<<endl;
+//            cout<<"update step too small"<<endl;
             break;
         }
     }

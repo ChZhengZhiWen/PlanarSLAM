@@ -35,9 +35,9 @@
 namespace Planar_SLAM
 {
 
-    LoopClosing::LoopClosing(Map *pMap, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale):
+    LoopClosing::LoopClosing(Map *pMap, KeyFrameDatabase *pDB, ORBVocabulary *pVoc,ORBVocabulary *lVoc, const bool bFixScale):
             mbResetRequested(false), mbFinishRequested(false), mbFinished(true), mpMap(pMap),
-            mpKeyFrameDB(pDB), mpORBVocabulary(pVoc), mpMatchedKF(NULL), mLastLoopKFid(0), mbRunningGBA(false), mbFinishedGBA(true),
+            mpKeyFrameDB(pDB), mpORBVocabulary(pVoc), mpORBVocabulary_line(lVoc), mpMatchedKF(NULL), mLastLoopKFid(0), mbRunningGBA(false), mbFinishedGBA(true),
             mbStopGBA(false), mpThreadGBA(NULL), mbFixScale(bFixScale), mnFullBAIdx(0)
     {
         mnCovisibilityConsistencyTh = 3;
@@ -64,18 +64,25 @@ namespace Planar_SLAM
             if(CheckNewKeyFrames())
             {
                 // Detect loop candidates and check covisibility consistency
-                if(DetectLoop())
+                if(DetectLoop_zzw())
                 {
                     // Compute similarity transformation [sR|t]
                     // In the stereo/RGBD case s=1
+//                    if(ComputeSim3_zzw())
                     if(ComputeSim3())
                     {
+                        cout<<"loop  stop --------------------"<<endl;
+                        cout<<"current frame id = "<<mpCurrentKF->mnFrameId<<endl;
+                        cout<<"detect frame id = "<<mpMatchedKF->mnFrameId<<endl;
+                        cv::imshow("current image"+ to_string(mpCurrentKF->mnFrameId),mpCurrentKF->mvImagePyramid_zzw[0]);
+                        cv::imshow("detect image"+ to_string(mpMatchedKF->mnFrameId),mpMatchedKF->mvImagePyramid_zzw[0]);
+
                         // Perform loop fusion and pose graph optimization
                         CorrectLoop();
-unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
-mpTracker->loopStop = true;
-getchar();
-cout<<"loop stop -------------------------------"<<endl;
+//unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
+//mpTracker->loopStop = true;
+//getchar();
+//cout<<"loop stop -------------------------------"<<endl;
                     }
                 }
             }
@@ -109,6 +116,12 @@ cout<<"loop stop -------------------------------"<<endl;
         {
             unique_lock<mutex> lock(mMutexLoopQueue);
             mpCurrentKF = mlpLoopKeyFrameQueue.front();
+
+//            KeyFrame temKF = KeyFrame(*mpCurrentKF);
+//            allKeyFrame.insert(std::pair<KeyFrame,KeyFrame*> (temKF,mpCurrentKF));
+//            allKeyFrame.insert(std::pair<int,KeyFrame*> (0,mpCurrentKF));
+            allKeyFrame.push_back(mpCurrentKF);
+
             mlpLoopKeyFrameQueue.pop_front();
             // Avoid that a keyframe can be erased while it is being process by this thread
             mpCurrentKF->SetNotErase();
@@ -141,8 +154,14 @@ cout<<"loop stop -------------------------------"<<endl;
                 minScore = score;
         }
 
+        if (minScore == 1){
+            cout<<"vpConnectedKeyFrames.size "<<vpConnectedKeyFrames.size()<<endl;
+            cout<<"mpCurrentKF id "<<mpCurrentKF->mnId<<"  "<<mpCurrentKF->mnFrameId<<endl;
+        }
+
         // Query the database imposing the minimum score
         vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectLoopCandidates(mpCurrentKF, minScore);
+//        vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectLoopCandidatesAllkeyframe(mpCurrentKF, minScore, allKeyFrame);
 
         // If there are no loop candidates, just add new keyframe and return false
         if(vpCandidateKFs.empty())
@@ -232,6 +251,550 @@ cout<<"loop stop -------------------------------"<<endl;
         return false;
     }
 
+    bool LoopClosing::DetectLoop_zzw()
+    {
+        {
+            unique_lock<mutex> lock(mMutexLoopQueue);
+            mpCurrentKF = mlpLoopKeyFrameQueue.front();
+
+            allKeyFrame.push_back(mpCurrentKF);
+            cout<<"current loop id "<<mpCurrentKF->mnFrameId<<endl;
+            mlpLoopKeyFrameQueue.pop_front();
+            // Avoid that a keyframe can be erased while it is being process by this thread
+            mpCurrentKF->SetNotErase();
+        }
+
+        //If the map contains less than 10 KF or less than 10 KF have passed from last loop detection
+        if(mpCurrentKF->mnId<mLastLoopKFid+10)
+        {
+            mpKeyFrameDB->add(mpCurrentKF);
+//            mpKeyFrameDB->add_wh(mpCurrentKF);
+            mpCurrentKF->SetErase();
+            return false;
+        }
+
+        // Compute reference BoW similarity score
+        // This is the lowest score to a connected keyframe in the covisibility graph
+        // We will impose loop candidates to have a higher similarity than this
+        const vector<KeyFrame*> vpConnectedKeyFrames = mpCurrentKF->GetVectorCovisibleKeyFrames();
+        const DBoW2::BowVector &CurrentBowVec = mpCurrentKF->mBowVec;
+
+        ///modify by wh
+        const DBoW2::BowVector &CurrentBowVec_line = mpCurrentKF->mBowVec_line;
+
+        float minScore = 1;
+        vector<float> tem;
+        for(size_t i=0; i<vpConnectedKeyFrames.size(); i++)
+        {
+            KeyFrame* pKF = vpConnectedKeyFrames[i];
+            if(pKF->isBad())
+                continue;
+            const DBoW2::BowVector &BowVec = pKF->mBowVec;
+
+            const DBoW2::BowVector &BowVec_line = pKF->mBowVec_line;
+
+
+            float score = mpORBVocabulary->score(CurrentBowVec, BowVec);
+            tem.push_back(score);
+//            float score2 = mpORBVocabulary_line->score(CurrentBowVec_line,BowVec_line);
+//            if(score2!=0)
+//            {
+//                score = 1.0*pKF->N/(pKF->N+pKF->NL)*score + 1.0*pKF->NL/(pKF->N+pKF->NL)*score2;
+//            }
+
+            if(score<minScore)
+                minScore = score;
+        }
+
+        if (minScore == -0)
+            minScore = 0.02;
+
+        if (minScore == 1){
+            cout<<"vpConnectedKeyFrames.size "<<vpConnectedKeyFrames.size()<<endl;
+            cout<<"mpCurrentKF id "<<mpCurrentKF->mnId<<"  "<<mpCurrentKF->mnFrameId<<endl;
+            for (auto x:tem) {
+                cout<<x<<" ";
+            }
+            cout<<endl;
+        }
+
+        //计算当前关键帧线段与曼哈顿轴之间的误差与每个共视关键线段与曼哈顿轴之间的误差之差的最大值
+        vector<float> cur_line_manhattan = mpCurrentKF->line_manhattan_err;
+        vector<float> minLineManScore = {99,99,99};
+        vector<float> maxLineManScore = {-1,-1,-1};
+        vector<float> avgLineManScore = {0,0,0};
+        for(auto pKF : vpConnectedKeyFrames)
+        {
+            if(pKF->isBad())
+                continue;
+            vector<float> Con_line_manhattan = pKF->line_manhattan_err;
+            for (int i = 0; i < 3; ++i) {
+                if (Con_line_manhattan[i] == -1 || cur_line_manhattan[i] == -1)
+                    continue;
+                float differ = abs(Con_line_manhattan[i] - cur_line_manhattan[i]);
+
+                if (differ < minLineManScore[i]){
+                    minLineManScore[i] = differ;
+                }
+                if (differ > maxLineManScore[i]){
+                    maxLineManScore[i] = differ;
+                }
+
+                avgLineManScore[i]+=differ;
+            }
+        }
+
+        for (int i = 0; i < 3; ++i) {
+            if (avgLineManScore[i]==0)
+                continue;
+            avgLineManScore[i] = avgLineManScore[i] - maxLineManScore[i] - minLineManScore[i];
+            avgLineManScore[i] = avgLineManScore[i] / (float(vpConnectedKeyFrames.size())-2.0);
+        }
+
+
+
+        // Query the database imposing the minimum score
+//        vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectLoopCandidates_zzw(mpCurrentKF, minScore, allKeyFrame, avgLineManScore);
+//        vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectLoopCandidates(mpCurrentKF, minScore);
+        vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectLoopCandidatesAllkeyframe(mpCurrentKF, minScore, allKeyFrame, avgLineManScore);
+
+        // If there are no loop candidates, just add new keyframe and return false
+        if(vpCandidateKFs.empty())
+        {
+            mpKeyFrameDB->add(mpCurrentKF);
+//            mpKeyFrameDB->add_wh(mpCurrentKF);
+            mvConsistentGroups.clear();
+            mpCurrentKF->SetErase();
+            return false;
+        }
+
+//        vector<KeyFrame*> vpCandidateKFsManhattan;
+//
+//        for (auto lit: vpCandidateKFs) {
+//            vector<float> lKFs_line_manhattan = mpKeyFrameDB->computeLineManhattan(lit);
+//            int num = 0;
+//            vector<float> differ = {-99, -99, -99};
+//            for (int j = 0; j < 3; ++j) {
+//                if (cur_line_manhattan[j] == -1 || lKFs_line_manhattan[j] == -1)
+//                    continue;
+//                differ[j] = abs(cur_line_manhattan[j] - lKFs_line_manhattan[j]);
+//                float _min;
+//                if (avgLineManScore[j] < 0.1) {
+//                    _min = avgLineManScore[j];
+//                } else {
+//                    _min = 0.1;
+//                }
+//                if (differ[j] <= _min)
+//                    num++;
+//            }
+//
+//            if (num >= 2)
+//                vpCandidateKFsManhattan.push_back(lit);
+//        }
+//        vpCandidateKFs = vpCandidateKFsManhattan;
+
+
+
+        // For each loop candidate check consistency with previous loop candidates
+        // Each candidate expands a covisibility group (keyframes connected to the loop candidate in the covisibility graph)
+        // A group is consistent with a previous group if they share at least a keyframe
+        // We must detect a consistent loop in several consecutive keyframes to accept it
+        mvpEnoughConsistentCandidates.clear();
+
+        vector<ConsistentGroup> vCurrentConsistentGroups;
+        vector<bool> vbConsistentGroup(mvConsistentGroups.size(),false);
+        for(size_t i=0, iend=vpCandidateKFs.size(); i<iend; i++)
+        {
+            KeyFrame* pCandidateKF = vpCandidateKFs[i];
+
+            set<KeyFrame*> spCandidateGroup = pCandidateKF->GetConnectedKeyFrames();
+            spCandidateGroup.insert(pCandidateKF);
+
+            bool bEnoughConsistent = false;
+            bool bConsistentForSomeGroup = false;
+            for(size_t iG=0, iendG=mvConsistentGroups.size(); iG<iendG; iG++)
+            {
+                set<KeyFrame*> sPreviousGroup = mvConsistentGroups[iG].first;
+
+                bool bConsistent = false;
+                for(set<KeyFrame*>::iterator sit=spCandidateGroup.begin(), send=spCandidateGroup.end(); sit!=send;sit++)
+                {
+                    if(sPreviousGroup.count(*sit))
+                    {
+                        bConsistent=true;
+                        bConsistentForSomeGroup=true;
+                        break;
+                    }
+                }
+
+                if(bConsistent)
+                {
+                    int nPreviousConsistency = mvConsistentGroups[iG].second;
+                    int nCurrentConsistency = nPreviousConsistency + 1;
+                    if(!vbConsistentGroup[iG])
+                    {
+                        ConsistentGroup cg = make_pair(spCandidateGroup,nCurrentConsistency);
+                        vCurrentConsistentGroups.push_back(cg);
+                        vbConsistentGroup[iG]=true; //this avoid to include the same group more than once
+                    }
+                    if(nCurrentConsistency>=mnCovisibilityConsistencyTh && !bEnoughConsistent)
+                    {
+                        mvpEnoughConsistentCandidates.push_back(pCandidateKF);
+                        bEnoughConsistent=true; //this avoid to insert the same candidate more than once
+                    }
+                }
+            }
+
+            // If the group is not consistent with any previous group insert with consistency counter set to zero
+            if(!bConsistentForSomeGroup)
+            {
+                ConsistentGroup cg = make_pair(spCandidateGroup,0);
+                vCurrentConsistentGroups.push_back(cg);
+            }
+        }
+
+        // Update Covisibility Consistent Groups
+        mvConsistentGroups = vCurrentConsistentGroups;
+
+
+        // Add Current Keyframe to database
+        mpKeyFrameDB->add(mpCurrentKF);
+//        mpKeyFrameDB->add_wh(mpCurrentKF);
+
+        if(mvpEnoughConsistentCandidates.empty())
+        {
+            mpCurrentKF->SetErase();
+            return false;
+        }
+        else
+        {
+            return true;
+        }
+
+        mpCurrentKF->SetErase();
+        return false;
+    }
+/*
+    bool LoopClosing::ComputeSim3()
+    {
+        // For each consistent loop candidate we try to compute a Sim3
+
+        const int nInitialCandidates = mvpEnoughConsistentCandidates.size();
+
+        // We compute first ORB matches for each candidate
+        // If enough matches are found, we setup a Sim3Solver
+        ORBmatcher matcher(0.75,true);
+
+        vector<Sim3Solver*> vpSim3Solvers;
+        vpSim3Solvers.resize(nInitialCandidates);
+
+        vector<vector<MapPoint*> > vvpMapPointMatches;
+        vvpMapPointMatches.resize(nInitialCandidates);
+
+        vector<bool> vbDiscarded;
+        vbDiscarded.resize(nInitialCandidates);
+
+        int nCandidates=0; //candidates with enough matches
+
+        for(int i=0; i<nInitialCandidates; i++)
+        {
+            KeyFrame* pKF = mvpEnoughConsistentCandidates[i];
+
+            // avoid that local mapping erase it while it is being processed in this thread
+            pKF->SetNotErase();
+
+            if(pKF->isBad())
+            {
+                vbDiscarded[i] = true;
+                continue;
+            }
+
+            int nmatches = matcher.SearchByBoW(mpCurrentKF,pKF,vvpMapPointMatches[i]);
+
+            if(nmatches<20)
+            {
+                vbDiscarded[i] = true;
+                continue;
+            }
+            else
+            {
+                Sim3Solver* pSolver = new Sim3Solver(mpCurrentKF,pKF,vvpMapPointMatches[i],mbFixScale);
+                pSolver->SetRansacParameters(0.99,20,300);
+                vpSim3Solvers[i] = pSolver;
+            }
+
+            nCandidates++;
+        }
+
+        bool bMatch = false;
+
+        // Perform alternatively RANSAC iterations for each candidate
+        // until one is succesful or all fail
+        cout<<"当前帧的回环候选帧的数量 = "<<nInitialCandidates<<endl;
+        vector<double> error_vec;
+        while(nCandidates>0 && !bMatch)
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+            {
+                if(vbDiscarded[i])
+                    continue;
+
+                KeyFrame* pKF = mvpEnoughConsistentCandidates[i];
+kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
+
+
+                // Perform 5 Ransac Iterations
+                vector<bool> vbInliers;
+                int nInliers;
+                bool bNoMore;
+
+                Sim3Solver* pSolver = vpSim3Solvers[i];
+                cv::Mat Scm  = pSolver->iterate(5,bNoMore,vbInliers,nInliers);
+
+                // If Ransac reachs max. iterations discard keyframe
+                if(bNoMore)
+                {
+                    vbDiscarded[i]=true;
+                    nCandidates--;
+                }
+
+                // If RANSAC returns a Sim3, perform a guided matching and optimize with all correspondences
+                if(!Scm.empty())
+                {
+                    vector<MapPoint*> vpMapPointMatches(vvpMapPointMatches[i].size(), static_cast<MapPoint*>(NULL));
+                    vector<MapPoint*> vpMapPointMatches1(vvpMapPointMatches[i].size(), static_cast<MapPoint*>(NULL));
+
+                    for(size_t j=0, jend=vbInliers.size(); j<jend; j++)
+                    {
+                        if(vbInliers[j])
+                            vpMapPointMatches[j]=vvpMapPointMatches[i][j];
+
+                        ///zzw
+                        if(vbInliers[j])
+                            vpMapPointMatches1[j]=vvpMapPointMatches[i][j];
+                    }
+
+                    cv::Mat R = pSolver->GetEstimatedRotation();
+                    cv::Mat t = pSolver->GetEstimatedTranslation();
+                    const float s = pSolver->GetEstimatedScale();
+                    matcher.SearchBySim3(mpCurrentKF,pKF,vpMapPointMatches,s,R,t,7.5);
+
+                    ///zzw
+                    vector<MapPoint*> vpMapPointMatches2(vpMapPointMatches.size(), static_cast<MapPoint*>(NULL));
+                    for(size_t j=0, jend=vpMapPointMatches.size(); j<jend; j++)
+                    {
+                        if(!vpMapPointMatches[j])
+                            continue;
+                        vpMapPointMatches2[j]=vpMapPointMatches[j];
+                    }
+
+
+                    g2o::Sim3 gScm(Converter::toMatrix3d(R),Converter::toVector3d(t),s);
+                    const int nInliers = Optimizer::OptimizeSim3(mpCurrentKF, pKF, vpMapPointMatches, gScm, 10, mbFixScale);
+
+
+                    cv::Mat current_pose1 = mpCurrentKF->GetPose();
+                    cv::Mat detect_pose1 = pKF->GetPose();
+                    cv::Mat T1 = Planar_SLAM::Converter::toCvMat(gScm);
+                    cv::Mat ans1 = detect_pose1 * T1;
+                    auto temp1 = Converter::toSE3Quat(ans1*current_pose1.inv());
+                    auto error1 = temp1.log().norm();
+                    error1 = sqrt(error1*error1);
+                    error_vec.push_back(error1);
+
+
+
+
+                    // If optimization is succesful stop ransacs and continue
+                    if(nInliers>=20)
+                    {
+                        bMatch = true;
+                        mpMatchedKF = pKF;
+/ *
+                        cv::Mat currentImg = mpCurrentKF->mvImagePyramid_zzw[0];
+                        cv::Mat matchedImg = mpMatchedKF->mvImagePyramid_zzw[0];
+                        cv::Mat Sum = cv::Mat::eye(cv::Size(currentImg.cols*2, currentImg.rows), CV_8U);
+                        cv::Mat Sum1 = cv::Mat::eye(cv::Size(currentImg.cols*2, currentImg.rows), CV_8U);
+                        for (int j = 0; j < currentImg.rows; ++j) {
+                            for (int k = 0; k < currentImg.cols; ++k) {
+                                Sum.at<unsigned char>(j,k) = currentImg.at<unsigned char>(j,k);
+                            }
+                        }
+                        for (int j = 0; j < matchedImg.rows; ++j) {
+                            for (int k = 0; k < matchedImg.cols; ++k) {
+                                Sum.at<unsigned char>(j,currentImg.cols-1+k) = matchedImg.at<unsigned char>(j,k);
+                            }
+                        }
+
+                        vector<MapPoint*> vpCurrentKFMP1 = mpCurrentKF->GetMapPointMatches();
+                        for(int i1=0; i1<vpMapPointMatches1.size(); i1++){
+                            if(!vpMapPointMatches1[i1])
+                                continue;
+                            MapPoint* pMP1 = vpCurrentKFMP1[i1];
+                            MapPoint* pMP2 = vpMapPointMatches1[i1];
+
+                            if(!pMP1)
+                                continue;
+
+                            if(pMP1->isBad() || pMP2->isBad())
+                                continue;
+                            int indexKF1 = pMP1->GetIndexInKeyFrame(mpCurrentKF);
+                            int indexKF2 = pMP2->GetIndexInKeyFrame(mpMatchedKF);
+
+                            if(indexKF1<0 || indexKF2<0)
+                                continue;
+
+                            const cv::KeyPoint &kp1 = mpCurrentKF->mvKeysUn[indexKF1];
+                            const cv::KeyPoint &kp2 = mpMatchedKF->mvKeysUn[indexKF2];
+
+                            cv::line(Sum, cv::Point2f(kp1.pt.x, kp1.pt.y), cv::Point2f(float(currentImg.cols)+kp2.pt.x,kp2.pt.y), cv::Scalar(255.0, 0.0, 0.0), 1);
+
+                        }
+
+                        cv::imshow("Sum",Sum);
+
+                        for (int j = 0; j < currentImg.rows; ++j) {
+                            for (int k = 0; k < currentImg.cols; ++k) {
+                                Sum1.at<unsigned char>(j,k) = currentImg.at<unsigned char>(j,k);
+                            }
+                        }
+                        for (int j = 0; j < matchedImg.rows; ++j) {
+                            for (int k = 0; k < matchedImg.cols; ++k) {
+                                Sum1.at<unsigned char>(j,currentImg.cols-1+k) = matchedImg.at<unsigned char>(j,k);
+                            }
+                        }
+
+                        vector<MapPoint*> vpCurrentKFMP2 = mpCurrentKF->GetMapPointMatches();
+                        for(int i1=0; i1<vpMapPointMatches2.size(); i1++){
+                            if(!vpMapPointMatches2[i1])
+                                continue;
+                            MapPoint* pMP1 = vpCurrentKFMP2[i1];
+                            MapPoint* pMP2 = vpMapPointMatches2[i1];
+
+                            if(!pMP1)
+                                continue;
+
+                            if(pMP1->isBad() || pMP2->isBad())
+                                continue;
+                            int indexKF1 = pMP1->GetIndexInKeyFrame(mpCurrentKF);
+                            int indexKF2 = pMP2->GetIndexInKeyFrame(mpMatchedKF);
+
+                            if(indexKF1<0 || indexKF2<0)
+                                continue;
+
+                            const cv::KeyPoint &kp1 = mpCurrentKF->mvKeysUn[indexKF1];
+                            const cv::KeyPoint &kp2 = mpMatchedKF->mvKeysUn[indexKF2];
+
+                            cv::line(Sum1, cv::Point2f(kp1.pt.x, kp1.pt.y), cv::Point2f(float(currentImg.cols)+kp2.pt.x,kp2.pt.y), cv::Scalar(255.0, 0.0, 0.0), 1);
+
+                        }
+
+                        cv::imshow("Sum1",Sum1);
+* /
+
+//                        int n = 0;
+//                        for (const auto& img:kfImg) {
+//                            cv::imshow(to_string(n),img);
+//                            n++;
+//                        }
+
+
+
+                        cv::Mat currentTcw = mpCurrentKF->GetPose();
+                        cv::Mat matchedTmw = mpMatchedKF->GetPose();
+                        cv::Mat matScm = Planar_SLAM::Converter::toCvMat(gScm);
+                        cv::Mat afterTcw = matScm * matchedTmw;
+                        cout<<"gScm "<<matScm<<endl;
+                        cout<<"mpCurrentKF  "<<currentTcw<<endl;
+                        cout<<"mpMatchedKF  "<<matchedTmw<<endl;
+                        auto tem = Converter::toSE3Quat((afterTcw * currentTcw.inv()));
+                        auto error = tem.log().norm();
+                        error = sqrt(error * error);
+                        cout<<"Tcc  "<<afterTcw * currentTcw.inv()<<endl;
+                        cout<<"error  "<<error<<endl;
+
+                        g2o::Sim3 gSmw(Converter::toMatrix3d(pKF->GetRotation()),Converter::toVector3d(pKF->GetTranslation()),1.0);
+                        mg2oScw = gScm*gSmw;
+                        mScw = Converter::toCvMat(mg2oScw);
+
+                        mvpCurrentMatchedPoints = vpMapPointMatches;
+
+
+                        unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
+                        mpTracker->loopStop = true;
+                        getchar();
+                        break;
+                    }
+                }
+            }
+        }
+
+        if(!bMatch)
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+                mvpEnoughConsistentCandidates[i]->SetErase();
+            mpCurrentKF->SetErase();
+            return false;
+        }
+
+
+        cout<<"error_vec "<<endl;
+        for(auto x : error_vec)
+        {
+            cout<<x<<" ";
+        }
+        cout<<endl;
+
+        // Retrieve MapPoints seen in Loop Keyframe and neighbors
+        vector<KeyFrame*> vpLoopConnectedKFs = mpMatchedKF->GetVectorCovisibleKeyFrames();
+        vpLoopConnectedKFs.push_back(mpMatchedKF);
+        mvpLoopMapPoints.clear();
+        for(vector<KeyFrame*>::iterator vit=vpLoopConnectedKFs.begin(); vit!=vpLoopConnectedKFs.end(); vit++)
+        {
+            KeyFrame* pKF = *vit;
+            vector<MapPoint*> vpMapPoints = pKF->GetMapPointMatches();
+            for(size_t i=0, iend=vpMapPoints.size(); i<iend; i++)
+            {
+                MapPoint* pMP = vpMapPoints[i];
+                if(pMP)
+                {
+                    if(!pMP->isBad() && pMP->mnLoopPointForKF!=mpCurrentKF->mnId)
+                    {
+                        mvpLoopMapPoints.push_back(pMP);
+                        pMP->mnLoopPointForKF=mpCurrentKF->mnId;
+                    }
+                }
+            }
+        }
+
+        // Find more matches projecting with the computed Sim3
+        matcher.SearchByProjection(mpCurrentKF, mScw, mvpLoopMapPoints, mvpCurrentMatchedPoints,10);
+
+        // If enough matches accept Loop
+        int nTotalMatches = 0;
+        for(size_t i=0; i<mvpCurrentMatchedPoints.size(); i++)
+        {
+            if(mvpCurrentMatchedPoints[i])
+                nTotalMatches++;
+        }
+
+        if(nTotalMatches>=40)
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+                if(mvpEnoughConsistentCandidates[i]!=mpMatchedKF)
+                    mvpEnoughConsistentCandidates[i]->SetErase();
+            return true;
+        }
+        else
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+                mvpEnoughConsistentCandidates[i]->SetErase();
+            mpCurrentKF->SetErase();
+            return false;
+        }
+
+    }
+*/
     bool LoopClosing::ComputeSim3()
     {
         // For each consistent loop candidate we try to compute a Sim3
@@ -339,6 +902,198 @@ cout<<"loop stop -------------------------------"<<endl;
                         mScw = Converter::toCvMat(mg2oScw);
 
                         mvpCurrentMatchedPoints = vpMapPointMatches;
+    //                    break;
+                    }
+                }
+            }
+        }
+
+        if(!bMatch)
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+                mvpEnoughConsistentCandidates[i]->SetErase();
+            mpCurrentKF->SetErase();
+            return false;
+        }
+
+        // Retrieve MapPoints seen in Loop Keyframe and neighbors
+        vector<KeyFrame*> vpLoopConnectedKFs = mpMatchedKF->GetVectorCovisibleKeyFrames();
+        vpLoopConnectedKFs.push_back(mpMatchedKF);
+        mvpLoopMapPoints.clear();
+        for(vector<KeyFrame*>::iterator vit=vpLoopConnectedKFs.begin(); vit!=vpLoopConnectedKFs.end(); vit++)
+        {
+            KeyFrame* pKF = *vit;
+            vector<MapPoint*> vpMapPoints = pKF->GetMapPointMatches();
+            for(size_t i=0, iend=vpMapPoints.size(); i<iend; i++)
+            {
+                MapPoint* pMP = vpMapPoints[i];
+                if(pMP)
+                {
+                    if(!pMP->isBad() && pMP->mnLoopPointForKF!=mpCurrentKF->mnId)
+                    {
+                        mvpLoopMapPoints.push_back(pMP);
+                        pMP->mnLoopPointForKF=mpCurrentKF->mnId;
+                    }
+                }
+            }
+        }
+
+        // Find more matches projecting with the computed Sim3
+        matcher.SearchByProjection(mpCurrentKF, mScw, mvpLoopMapPoints, mvpCurrentMatchedPoints,10);
+
+        // If enough matches accept Loop
+        int nTotalMatches = 0;
+        for(size_t i=0; i<mvpCurrentMatchedPoints.size(); i++)
+        {
+            if(mvpCurrentMatchedPoints[i])
+                nTotalMatches++;
+        }
+
+        if(nTotalMatches>=40)
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+                if(mvpEnoughConsistentCandidates[i]!=mpMatchedKF)
+                    mvpEnoughConsistentCandidates[i]->SetErase();
+            return true;
+        }
+        else
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+                mvpEnoughConsistentCandidates[i]->SetErase();
+            mpCurrentKF->SetErase();
+            return false;
+        }
+
+    }
+
+    bool LoopClosing::ComputeSim3_zzw()
+    {
+        // For each consistent loop candidate we try to compute a Sim3
+
+        const int nInitialCandidates = mvpEnoughConsistentCandidates.size();
+
+        // We compute first ORB matches for each candidate
+        // If enough matches are found, we setup a Sim3Solver
+        ORBmatcher matcher(0.75,true);
+        ///modify by wh
+        LSDmatcher match_line(0.6,true);
+
+        vector<Sim3Solver*> vpSim3Solvers;
+        vpSim3Solvers.resize(nInitialCandidates);
+
+        vector<vector<MapPoint*> > vvpMapPointMatches;
+        vvpMapPointMatches.resize(nInitialCandidates);
+
+        vector<bool> vbDiscarded;
+        vbDiscarded.resize(nInitialCandidates);
+
+        vector<vector<MapLine*> > vvpMapLineMatches;
+        vvpMapLineMatches.resize(nInitialCandidates);
+
+        vector<bool> vbDiscarded_line;
+        vbDiscarded_line.resize(nInitialCandidates);
+
+        int nCandidates=0; //candidates with enough matches
+
+        for(int i=0; i<nInitialCandidates; i++)
+        {
+            KeyFrame* pKF = mvpEnoughConsistentCandidates[i];
+
+            // avoid that local mapping erase it while it is being processed in this thread
+            pKF->SetNotErase();
+
+            if(pKF->isBad())
+            {
+                vbDiscarded[i] = true;
+                ///modify by wh
+                vbDiscarded_line[i] = true;
+                continue;
+            }
+
+            int nmatches = matcher.SearchByBoW(mpCurrentKF,pKF,vvpMapPointMatches[i]);
+
+            ///modify by wh
+            int nmatches_line = match_line.SearchByDescriptor(mpCurrentKF,pKF,vvpMapLineMatches[i]);
+
+            int sumMatch = nmatches + nmatches_line;
+            if(sumMatch<20)
+            {
+                vbDiscarded[i] = true;
+                vbDiscarded_line[i] = true;
+                continue;
+            }
+            else
+            {
+//                Sim3Solver* pSolver = new Sim3Solver(mpCurrentKF,pKF,vvpMapPointMatches[i],mbFixScale);
+                Sim3Solver* pSolver = new Sim3Solver(mpCurrentKF,pKF,vvpMapPointMatches[i],vvpMapLineMatches[i],mbFixScale);
+unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
+mpTracker->loopStop = true;
+getchar();
+                pSolver->SetRansacParameters(0.99,20,300);
+                vpSim3Solvers[i] = pSolver;
+            }
+
+            nCandidates++;
+        }
+
+        bool bMatch = false;
+
+        // Perform alternatively RANSAC iterations for each candidate
+        // until one is succesful or all fail
+        while(nCandidates>0 && !bMatch)
+        {
+            for(int i=0; i<nInitialCandidates; i++)
+            {
+                if(vbDiscarded[i])
+                    continue;
+
+                KeyFrame* pKF = mvpEnoughConsistentCandidates[i];
+
+                // Perform 5 Ransac Iterations
+                vector<bool> vbInliers;
+                int nInliers;
+                bool bNoMore;
+
+                Sim3Solver* pSolver = vpSim3Solvers[i];
+                cv::Mat Scm  = pSolver->iterate(5,bNoMore,vbInliers,nInliers);
+
+                // If Ransac reachs max. iterations discard keyframe
+                if(bNoMore)
+                {
+                    vbDiscarded[i]=true;
+                    nCandidates--;
+                }
+
+                // If RANSAC returns a Sim3, perform a guided matching and optimize with all correspondences
+                if(!Scm.empty())
+                {
+                    vector<MapPoint*> vpMapPointMatches(vvpMapPointMatches[i].size(), static_cast<MapPoint*>(NULL));
+                    vector<MapLine*> vpMapLineMatches(vvpMapLineMatches[i].size(), static_cast<MapLine*>(NULL));
+
+                    for(size_t j=0, jend=vbInliers.size(); j<jend; j++)
+                    {
+                        if(vbInliers[j])
+                            vpMapPointMatches[j]=vvpMapPointMatches[i][j];
+                    }
+
+                    cv::Mat R = pSolver->GetEstimatedRotation();
+                    cv::Mat t = pSolver->GetEstimatedTranslation();
+                    const float s = pSolver->GetEstimatedScale();
+                    matcher.SearchBySim3(mpCurrentKF,pKF,vpMapPointMatches,s,R,t,7.5);
+
+                    g2o::Sim3 gScm(Converter::toMatrix3d(R),Converter::toVector3d(t),s);
+                    const int nInliers = Optimizer::OptimizeSim3(mpCurrentKF, pKF, vpMapPointMatches, gScm, 10, mbFixScale);
+
+                    // If optimization is succesful stop ransacs and continue
+                    if(nInliers>=20)
+                    {
+                        bMatch = true;
+                        mpMatchedKF = pKF;
+                        g2o::Sim3 gSmw(Converter::toMatrix3d(pKF->GetRotation()),Converter::toVector3d(pKF->GetTranslation()),1.0);
+                        mg2oScw = gScm*gSmw;
+                        mScw = Converter::toCvMat(mg2oScw);
+
+                        mvpCurrentMatchedPoints = vpMapPointMatches;
                         break;
                     }
                 }
@@ -406,6 +1161,12 @@ cout<<"loop stop -------------------------------"<<endl;
     void LoopClosing::CorrectLoop()
     {
         cout << "Loop detected!" << endl;
+{
+    unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
+    mpTracker->loopStop = true;
+    getchar();
+}
+
 
         // Send a stop signal to Local Mapping
         // Avoid new keyframes are inserted while correcting the loop
@@ -566,6 +1327,9 @@ cout<<"loop stop -------------------------------"<<endl;
                 LoopConnections[pKFi].erase(*vit2);
             }
         }
+//!星球建议修改
+        mpMatchedKF->AddLoopEdge(mpCurrentKF);
+        mpCurrentKF->AddLoopEdge(mpMatchedKF);
 
         // Optimize graph
         Optimizer::OptimizeEssentialGraph(mpMap, mpMatchedKF, mpCurrentKF, NonCorrectedSim3, CorrectedSim3, LoopConnections, mbFixScale);
@@ -573,8 +1337,8 @@ cout<<"loop stop -------------------------------"<<endl;
         mpMap->InformNewBigChange();
 
         // Add loop edge
-        mpMatchedKF->AddLoopEdge(mpCurrentKF);
-        mpCurrentKF->AddLoopEdge(mpMatchedKF);
+//        mpMatchedKF->AddLoopEdge(mpCurrentKF);
+//        mpCurrentKF->AddLoopEdge(mpMatchedKF);
 
         // Launch a new thread to perform Global Bundle Adjustment
         mbRunningGBA = true;

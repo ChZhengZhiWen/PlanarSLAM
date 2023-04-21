@@ -115,6 +115,105 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
     SetRansacParameters();
 }
 
+Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> &vpMatched12,const vector<MapLine *> &vpMatched_line12, const bool bFixScale):
+        mnIterations(0), mnBestInliers(0), mbFixScale(bFixScale){
+    mpKF1 = pKF1;
+    mpKF2 = pKF2;
+
+    vector<MapPoint*> vpKeyFrameMP1 = pKF1->GetMapPointMatches();
+    vector<MapLine*> vpKeyFrameML1 = pKF1->GetMapLineMatches();
+
+    int totalSamples=0;
+    for(int i=0; i<vpMatched_line12.size(); i++)
+    {
+        if (vpMatched_line12[i]){
+            MapLine* pML = vpKeyFrameML1[i];
+            if(!pML) continue;
+
+            if(pML->isBad()) continue;
+
+            int idx1 = pML->GetIndexInKeyFrame(pKF1);
+            if(idx1<0) continue;
+            const cv::line_descriptor::KeyLine &kl = pKF1->mvKeyLines[idx1];
+            Vector2f sp_l(kl.startPointX,kl.startPointY),ep_l(kl.endPointX,kl.endPointY);
+            float length = (ep_l-sp_l).norm();
+            cout<<"length "<<length<<endl;
+            int N_samples = pKF1->setupSampling(4, sp_l, ep_l, length);
+            totalSamples+=N_samples;
+        }
+    }
+
+    mN1 = vpMatched12.size();
+    mNL1 = vpMatched_line12.size();
+
+    mvpMapPoints1.reserve(mN1);
+    mvpMapPoints2.reserve(mN1);
+    mvpMatches12 = vpMatched12;
+    mvnIndices1.reserve(mN1);
+    mvX3Dc1.reserve(mN1);
+    mvX3Dc2.reserve(mN1);
+
+    cv::Mat Rcw1 = pKF1->GetRotation();
+    cv::Mat tcw1 = pKF1->GetTranslation();
+    cv::Mat Rcw2 = pKF2->GetRotation();
+    cv::Mat tcw2 = pKF2->GetTranslation();
+
+    mvAllIndices.reserve(mN1);
+
+    size_t idx=0;
+    for(int i1=0; i1<mN1; i1++)
+    {
+        if(vpMatched12[i1])
+        {
+            MapPoint* pMP1 = vpKeyFrameMP1[i1];
+            MapPoint* pMP2 = vpMatched12[i1];
+
+            if(!pMP1)
+                continue;
+
+            if(pMP1->isBad() || pMP2->isBad())
+                continue;
+
+            int indexKF1 = pMP1->GetIndexInKeyFrame(pKF1);
+            int indexKF2 = pMP2->GetIndexInKeyFrame(pKF2);
+
+            if(indexKF1<0 || indexKF2<0)
+                continue;
+
+            const cv::KeyPoint &kp1 = pKF1->mvKeysUn[indexKF1];
+            const cv::KeyPoint &kp2 = pKF2->mvKeysUn[indexKF2];
+
+            const float sigmaSquare1 = pKF1->mvLevelSigma2[kp1.octave];
+            const float sigmaSquare2 = pKF2->mvLevelSigma2[kp2.octave];
+
+            mvnMaxError1.push_back(9.210*sigmaSquare1);
+            mvnMaxError2.push_back(9.210*sigmaSquare2);
+
+            mvpMapPoints1.push_back(pMP1);
+            mvpMapPoints2.push_back(pMP2);
+            mvnIndices1.push_back(i1);
+
+            cv::Mat X3D1w = pMP1->GetWorldPos();
+            mvX3Dc1.push_back(Rcw1*X3D1w+tcw1);
+
+            cv::Mat X3D2w = pMP2->GetWorldPos();
+            mvX3Dc2.push_back(Rcw2*X3D2w+tcw2);
+
+            mvAllIndices.push_back(idx);
+            idx++;
+        }
+    }
+
+    mK1 = pKF1->mK;
+    mK2 = pKF2->mK;
+
+    FromCameraToImage(mvX3Dc1,mvP1im1,mK1);
+    FromCameraToImage(mvX3Dc2,mvP2im2,mK2);
+
+    SetRansacParameters();
+}
+
+
 void Sim3Solver::SetRansacParameters(double probability, int minInliers, int maxIterations)
 {
     mRansacProb = probability;

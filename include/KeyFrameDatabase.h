@@ -44,8 +44,11 @@ class KeyFrameDatabase
 public:
 
     KeyFrameDatabase(const ORBVocabulary &voc);
+    KeyFrameDatabase(const ORBVocabulary &voc,const ORBVocabulary &voc_line);
 
    void add(KeyFrame* pKF);
+
+    void add_wh(KeyFrame* pKF);
 
    void erase(KeyFrame* pKF);
 
@@ -53,14 +56,20 @@ public:
 
    // Loop Detection
    std::vector<KeyFrame *> DetectLoopCandidates(KeyFrame* pKF, float minScore);
+   std::vector<KeyFrame *> DetectLoopCandidatesAllkeyframe(KeyFrame* pKF, float minScore,vector<KeyFrame*> vec,vector<float> avgLineManScore);
+   std::vector<KeyFrame *> DetectLoopCandidates_zzw(KeyFrame* pKF, float minScore,const vector<KeyFrame*>& allKeyFrame, vector<float> avgLineManScore);
 
    // Relocalization
    std::vector<KeyFrame*> DetectRelocalizationCandidates(Frame* F);
+
+   vector<float> computeLineManhattan(KeyFrame *frame);
 
 protected:
 
   // Associated vocabulary
   const ORBVocabulary* mpVoc;
+
+  const ORBVocabulary* mpVoc_line;
 
   // Inverted file
   std::vector<list<KeyFrame*> > mvInvertedFile;

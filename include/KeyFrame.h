@@ -60,6 +60,7 @@ namespace Planar_SLAM
         typedef pcl::PointCloud <PointT> PointCloud;
 
         KeyFrame(Frame &F, Map* pMap, KeyFrameDatabase* pKFDB);
+        KeyFrame(const KeyFrame &keyFrame);
         // Pose functions
         void SetPose(const cv::Mat &Tcw);
         cv::Mat GetPose();
@@ -72,6 +73,7 @@ namespace Planar_SLAM
 
         // Bag of Words Representation
         void ComputeBoW();
+        void ComputeBow_line();
 
         // Covisibility graph functions
         void AddConnection(KeyFrame* pKF, const int &weight);
@@ -174,6 +176,8 @@ namespace Planar_SLAM
             return T_c_w * p_w;
         }
 
+        int setupSampling(size_t patch_size,Vector2f spx,Vector2f epx,float length);
+
     public:
 
         static long unsigned int nNextId;
@@ -233,6 +237,8 @@ namespace Planar_SLAM
 
         //BoW
         DBoW2::BowVector mBowVec;
+
+        DBoW2::BowVector mBowVec_line;
         DBoW2::FeatureVector mFeatVec;
 
         // Pose relative to parent (this is computed when bad flag is activated)
@@ -263,6 +269,9 @@ namespace Planar_SLAM
         bool mbNewPlane; // used to determine a keyframe
 
         vector<cv::Mat> mvImagePyramid_zzw;
+        vector<cv::Mat> mvManhattanForLoop;
+        cv::Mat mManhattan_Rotation_cm;
+        vector<float> line_manhattan_err;
 
         void AddMapPlane(MapPlane* pMP, const int &idx);
         void AddMapVerticalPlane(MapPlane* pMP, const int &idx);
@@ -304,6 +313,7 @@ namespace Planar_SLAM
         // BoW
         KeyFrameDatabase* mpKeyFrameDB;
         ORBVocabulary* mpORBvocabulary;
+        ORBVocabulary* mpORBvocabulary_line;
 
         // Grid over the image to speed up feature matching
         std::vector< std::vector <std::vector<size_t> > > mGrid;

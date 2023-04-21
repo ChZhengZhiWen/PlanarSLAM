@@ -51,7 +51,7 @@ namespace Planar_SLAM
 
     public:
 
-        LoopClosing(Map* pMap, KeyFrameDatabase* pDB, ORBVocabulary* pVoc,const bool bFixScale);
+        LoopClosing(Map* pMap, KeyFrameDatabase* pDB, ORBVocabulary* pVoc,ORBVocabulary* lVoc,const bool bFixScale);
 
         void SetTracker(Tracking* pTracker);
 
@@ -79,11 +79,17 @@ namespace Planar_SLAM
 
         bool isFinished();
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+        vector<cv::Mat> kfImg;
+        vector<KeyFrame*> allKeyFrame;
+//        std::map<int,KeyFrame*> allKeyFrame;
     protected:
 
         bool CheckNewKeyFrames();
         bool DetectLoop();
+        bool DetectLoop_zzw();
         bool ComputeSim3();
+        bool ComputeSim3_zzw();
         void CorrectLoop();
 
         void SearchAndFuse(const KeyFrameAndPose &CorrectedPosesMap);
@@ -103,6 +109,8 @@ namespace Planar_SLAM
 
         KeyFrameDatabase* mpKeyFrameDB;
         ORBVocabulary* mpORBVocabulary;
+
+        ORBVocabulary* mpORBVocabulary_line;
 
         LocalMapping *mpLocalMapper;
 

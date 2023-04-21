@@ -236,8 +236,7 @@ namespace Planar_SLAM {
                     line /= cv::norm(line);
 
                     //这里会出现许多线段的向量为nan的情况，这是因为这里查询的线段是j既初始化时探测到的线段数量
-                    // 但由于初始化时对线段通过RANSAC过滤去除了一部分所以有些查询的线段索引根本不在vector中
-                    // 而如果在obtain3DLine加入判断当前查询的数据是否在vector中我认为会大大增加计算量
+                    // 但由于初始化时对线段通过RANSAC过滤去除了一部分
                     if(out)
                         cout << "line_"<<j<<": " << line.t() << endl;
 
@@ -343,9 +342,19 @@ namespace Planar_SLAM {
             cv::Mat first, second, third;
 
             std::map<int, cv::Mat> sort;
-            if (loc1 == loc3 || loc2 == loc3){
+            if (loc1 == loc2 || loc1 == loc3 || loc2 == loc3){
                 cout<<"444444444444444444444444444"<<endl;
                 getchar();
+                if (loc1 == loc2){
+                    sort[loc1] = bestP1;
+                    sort[loc3] = p3;
+                    if (loc1+loc3==1)
+                        sort[2] = bestP2;
+                    else if (loc1+loc3==2)
+                        sort[1] = bestP2;
+                    else
+                        sort[0] = bestP2;
+                }
                 sort[loc1] = bestP1;
                 sort[loc2] = bestP2;
                 if (loc1+loc2==1)

@@ -82,7 +82,7 @@ namespace Planar_SLAM {
               vSurfaceNormalx(frame.vSurfaceNormalx), vSurfaceNormaly(frame.vSurfaceNormaly), vSurfaceNormalz(frame.vSurfaceNormalz),
               vSurfacePointx(frame.vSurfacePointx), vSurfacePointy(frame.vSurfacePointy), vSurfacePointz(frame.vSurfacePointz),
               vVanishingLinex(frame.vVanishingLinex),vVanishingLiney(frame.vVanishingLiney),vVanishingLinez(frame.vVanishingLinez),
-              mvPlanePoints(frame.mvPlanePoints),mvDepthLine_zzw(frame.mvDepthLine_zzw) {
+              mvPlanePoints(frame.mvPlanePoints),mvDepthLine_zzw(frame.mvDepthLine_zzw),mvManhattanForLoop(frame.mvManhattanForLoop) {
         for (int i = 0; i < FRAME_GRID_COLS; i++)
             for (int j = 0; j < FRAME_GRID_ROWS; j++)
                 mGrid[i][j] = frame.mGrid[i][j];
@@ -97,10 +97,11 @@ namespace Planar_SLAM {
 
     Frame::Frame(const cv::Mat &imRGB, const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp,
                  ORBextractor *extractor, ORBVocabulary *voc, cv::Mat &K, cv::Mat &distCoef, const float &bf,
-                 const float &thDepth, const float &depthMapFactor)
+                 const float &thDepth, const float &depthMapFactor,ORBVocabulary *voc_line)
             : mpORBvocabulary(voc), mpORBextractorLeft(extractor),
               mpORBextractorRight(static_cast<ORBextractor *>(NULL)),
-              mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth) {
+              mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
+              mpORBvocabulary_line(voc_line){
         mImGray = imGray.clone();
         // Frame ID
         mnId = nNextId++;

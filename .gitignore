@@ -8,6 +8,7 @@ CameraTrajectory.txt
 KeyFrameTrajectory.txt
 MeshMap.ply
 /Vocabulary/ORBvoc.txt
+/Vocabulary/mapir_lsd.yml
 /lib
 /Examples/RGB-D/Planar_SLAM
 run.sh

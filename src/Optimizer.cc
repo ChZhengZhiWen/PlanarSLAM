@@ -4132,6 +4132,4 @@ namespace Planar_SLAM {
 
         return nIn;
     }
-
-
 } //namespace Planar_SLAM

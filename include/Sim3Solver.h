@@ -37,6 +37,8 @@ class Sim3Solver
 public:
 
     Sim3Solver(KeyFrame* pKF1, KeyFrame* pKF2, const std::vector<MapPoint*> &vpMatched12, const bool bFixScale = true);
+///modify by wh
+    Sim3Solver(KeyFrame* pKF1, KeyFrame* pKF2, const std::vector<MapPoint*> &vpMatched12, const std::vector<MapLine*> &vpMatched_line12,const bool bFixScale = true);
 
     void SetRansacParameters(double probability = 0.99, int minInliers = 6 , int maxIterations = 300);
 
@@ -80,6 +82,7 @@ protected:
 
     int N;
     int mN1;
+    int mNL1;
 
     // Current Estimation
     cv::Mat mR12i;

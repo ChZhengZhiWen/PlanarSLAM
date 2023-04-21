@@ -55,7 +55,7 @@ public:
 
     
     Tracking(System* pSys, ORBVocabulary* pVoc, FrameDrawer* pFrameDrawer, MapDrawer* pMapDrawer, Map* pMap,
-             KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor);
+             KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor,ORBVocabulary *lVoc);
 
     // Preprocess the input and call Track(). Extract features and performs stereo matching.
     cv::Mat GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp);
@@ -85,6 +85,7 @@ public:
     cv::Mat ClusterMultiManhattanFrame(vector<cv::Mat> &vRotationCandidate,double &clusterRatio);
     vector<vector<int>>  EasyHist(vector<float> &vDistance,int &histStart,float &histStep,int&histEnd);
     void SaveMesh(const string &filename);
+
 
 public:
 
@@ -220,7 +221,7 @@ protected:
      */
     vector<pair<KeyFrame *, size_t> > SelectNearestKeyframe(const map<KeyFrame *, size_t> &observations, int n = 5);
 
-    cv::Mat addManhattanForLoop(Frame &pF, const float &verTh);
+    void addManhattanForLoop(KeyFrame *pF);
 
     // In case of performing only localization, this flag is true when there are no matches to
     // points in the map. Still tracking will continue if there are enough matches with temporal points.
@@ -240,6 +241,7 @@ protected:
     //BoW
     ORBVocabulary* mpORBVocabulary;
     KeyFrameDatabase* mpKeyFrameDB;
+    ORBVocabulary* mpORBVocabulary_line;
 
     // Initalization (only for monocular)
     Initializer* mpInitializer;

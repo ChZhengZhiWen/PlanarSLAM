@@ -50,7 +50,8 @@ namespace Planar_SLAM
             NL(F.NL), mvKeyLines(F.mvKeylinesUn), mvDepthLine(F.mvDepthLine), mvKeyLineFunctions(F.mvKeyLineFunctions), mLineDescriptors(F.mLdesc),
             mvpMapLines(F.mvpMapLines), mv3DLineforMap(F.mv3DLineforMap), mvLines3D(F.mvLines3D), mvPlaneCoefficients(F.mvPlaneCoefficients), mnPlaneNum(F.mnPlaneNum),
             mvpMapPlanes(F.mvpMapPlanes), mbNewPlane(F.mbNewPlane), mvPlanePoints(F.mvPlanePoints),
-            mvpParallelPlanes(F.mvpParallelPlanes), mvpVerticalPlanes(F.mvpVerticalPlanes)
+            mvpParallelPlanes(F.mvpParallelPlanes), mvpVerticalPlanes(F.mvpVerticalPlanes),mvManhattanForLoop(F.mvManhattanForLoop),mManhattan_Rotation_cm(F.mManhattan_Rotation_cm),
+            mpORBvocabulary_line(F.mpORBvocabulary_line)
     {
         mnId=nNextId++;
 
@@ -66,6 +67,36 @@ namespace Planar_SLAM
 
         for (cv::Mat &im: F.mvImagePyramid_zzw) {
             mvImagePyramid_zzw.push_back(im);
+        }
+
+        ComputeBow_line();
+    }
+
+    KeyFrame::KeyFrame(const KeyFrame &KF):
+    mnFrameId(KF.mnFrameId), mTimeStamp(KF.mTimeStamp), mnGridCols(KF.mnGridCols), mnGridRows(KF.mnGridRows),
+    mfGridElementWidthInv(KF.mfGridElementWidthInv), mfGridElementHeightInv(KF.mfGridElementHeightInv),
+    mnTrackReferenceForFrame(KF.mnTrackReferenceForFrame), mnFuseTargetForKF(KF.mnFuseTargetForKF),
+    mnBALocalForKF(KF.mnBALocalForKF), mnBAFixedForKF(KF.mnBAFixedForKF),mnLoopQuery(KF.mnLoopQuery),
+    mnLoopWords(KF.mnLoopWords), mnRelocQuery(KF.mnRelocQuery), mnRelocWords(KF.mnRelocWords),
+    mnBAGlobalForKF(KF.mnBAGlobalForKF),fx(KF.fx), fy(KF.fy), cx(KF.cx), cy(KF.cy), invfx(KF.invfx), invfy(KF.invfy),
+    mbf(KF.mbf), mb(KF.mb), mThDepth(KF.mThDepth), N(KF.N), mvKeys(KF.mvKeys), mvKeysUn(KF.mvKeysUn),
+    mvuRight(KF.mvuRight), mvDepth(KF.mvDepth), mDescriptors(KF.mDescriptors.clone()),
+    mBowVec(KF.mBowVec), mFeatVec(KF.mFeatVec), mnScaleLevels(KF.mnScaleLevels), mfScaleFactor(KF.mfScaleFactor),
+    mfLogScaleFactor(KF.mfLogScaleFactor), mvScaleFactors(KF.mvScaleFactors), mvLevelSigma2(KF.mvLevelSigma2),
+    mvInvLevelSigma2(KF.mvInvLevelSigma2), mnMinX(KF.mnMinX), mnMinY(KF.mnMinY), mnMaxX(KF.mnMaxX),
+    mnMaxY(KF.mnMaxY), mK(KF.mK), mvpMapPoints(KF.mvpMapPoints), mpKeyFrameDB(KF.mpKeyFrameDB),
+    mpORBvocabulary(KF.mpORBvocabulary), mbFirstConnection(KF.mbFirstConnection), mpParent(KF.mpParent),
+    mbNotErase(KF.mbNotErase),mbToBeErased(KF.mbToBeErased), mbBad(KF.mbBad), mHalfBaseline(KF.mHalfBaseline),
+    mpMap(KF.mpMap),NL(KF.NL), mvKeyLines(KF.mvKeyLines), mvDepthLine(KF.mvDepthLine),
+    mvKeyLineFunctions(KF.mvKeyLineFunctions),mLineDescriptors(KF.mLineDescriptors),mvpMapLines(KF.mvpMapLines),
+    mv3DLineforMap(KF.mv3DLineforMap), mvLines3D(KF.mvLines3D),mvPlaneCoefficients(KF.mvPlaneCoefficients),
+    mnPlaneNum(KF.mnPlaneNum),mvpMapPlanes(KF.mvpMapPlanes),mbNewPlane(KF.mbNewPlane), mvPlanePoints(KF.mvPlanePoints),
+    mvpParallelPlanes(KF.mvpParallelPlanes),mvpVerticalPlanes(KF.mvpVerticalPlanes),mvManhattanForLoop(KF.mvManhattanForLoop),
+    mManhattan_Rotation_cm(KF.mManhattan_Rotation_cm),mpORBvocabulary_line(KF.mpORBvocabulary_line),mnId(KF.mnId),
+    mLoopScore(KF.mLoopScore), mRelocScore(KF.mRelocScore)
+    {
+        for (auto x:KF.mvpOrderedConnectedKeyFrames) {
+            mvpOrderedConnectedKeyFrames.push_back(x);
         }
     }
 
@@ -1036,4 +1067,22 @@ namespace Planar_SLAM
         return s;
     }
 
+    void KeyFrame::ComputeBow_line()
+    {
+        if(mBowVec_line.empty())
+        {
+            vector<cv::Mat> vCurrentDesc_line = Converter::toDescriptorVector(mLineDescriptors);
+            mpORBvocabulary_line->transform(vCurrentDesc_line,mBowVec_line);
+        }
+    }
+
+    int KeyFrame::setupSampling(size_t patch_size,Vector2f spx,Vector2f epx,float length)
+    {
+        Vector2f dif = epx - spx; // difference vector from start to end point
+        double tan_dir = std::min(fabs(dif[0]),fabs(dif[1])) / std::max(fabs(dif[0]),fabs(dif[1]));
+        double sin_dir = tan_dir / sqrt( 1.0+tan_dir*tan_dir );//1+tanx^2=secx²
+        double correction = 2.0 * sqrt( 1.0 + sin_dir*sin_dir );
+
+        return std::max( 1.0, length / (patch_size*correction) );
+    }
 } //namespace ORB_SLAM
