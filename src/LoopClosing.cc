@@ -850,6 +850,13 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
 
         // Perform alternatively RANSAC iterations for each candidate
         // until one is succesful or all fail
+
+        KeyFrame* last_select = mpCurrentKF;
+        double min_error = 1;
+        g2o::Sim3 error_mg2oScw;
+        cv::Mat error_mScw;
+        std::vector<MapPoint*> error_CurrentMatchedPoints;
+
         while(nCandidates>0 && !bMatch)
         {
             for(int i=0; i<nInitialCandidates; i++)
@@ -892,6 +899,15 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
                     g2o::Sim3 gScm(Converter::toMatrix3d(R),Converter::toVector3d(t),s);
                     const int nInliers = Optimizer::OptimizeSim3(mpCurrentKF, pKF, vpMapPointMatches, gScm, 10, mbFixScale);
 
+//                    cv::Mat current_pose1 = mpCurrentKF->GetPose();
+//                    cv::Mat detect_pose1 = pKF->GetPose();
+//                    cv::Mat T1 = Planar_SLAM::Converter::toCvMat(gScm);
+//                    cv::Mat ans1 = detect_pose1 * T1;
+//                    auto temp1 = Converter::toSE3Quat(ans1*current_pose1.inv());
+//                    auto error1 = temp1.log().norm();
+//                    error1 = sqrt(error1*error1);
+
+
                     // If optimization is succesful stop ransacs and continue
                     if(nInliers>=20)
                     {
@@ -902,6 +918,17 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
                         mScw = Converter::toCvMat(mg2oScw);
 
                         mvpCurrentMatchedPoints = vpMapPointMatches;
+
+
+//                        if(error1 < min_error)
+//                        {
+//                            min_error = error1;
+//                            last_select = pKF;
+//                            error_mg2oScw = gScm*gSmw;
+//                            error_mScw = Converter::toCvMat(error_mg2oScw);
+//                            error_CurrentMatchedPoints = vpMapPointMatches;
+//                        }
+
     //                    break;
                     }
                 }
@@ -915,6 +942,12 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
             mpCurrentKF->SetErase();
             return false;
         }
+
+
+//        mpMatchedKF = last_select;
+//        mg2oScw = error_mg2oScw;
+//        mScw = error_mScw;
+//        mvpCurrentMatchedPoints = error_CurrentMatchedPoints;
 
         // Retrieve MapPoints seen in Loop Keyframe and neighbors
         vector<KeyFrame*> vpLoopConnectedKFs = mpMatchedKF->GetVectorCovisibleKeyFrames();
@@ -1162,9 +1195,9 @@ getchar();
     {
         cout << "Loop detected!" << endl;
 {
-    unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
-    mpTracker->loopStop = true;
-    getchar();
+//    unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
+//    mpTracker->loopStop = true;
+//    getchar();
 }
 
 
