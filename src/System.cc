@@ -359,15 +359,9 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
     }
     f1.close();
 
-//    string name = "kfImg.txt";
-//    ofstream f2;
-//    f2.open(name.c_str());
-//    f2 << fixed;
-//    vector<cv::Mat> loopKf = mpLoopCloser->kfImg;
-//    for (const auto& img:loopKf) {
-//        f2 << img << endl;
-//    }
-//    f2.close();
+    for (auto x:mpLoopCloser->msg) {
+        cout<<x<<endl;
+    }
 }
 
 void System::SaveMesh(const string&filename){

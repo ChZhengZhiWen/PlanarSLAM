@@ -7,11 +7,13 @@ namespace Planar_SLAM {
 using namespace cv::line_descriptor;
 
     SparseImgAlign::SparseImgAlign(
-            int max_level, int min_level, int n_iter,
+            int max_level, int min_level,float m_chi2,float m_nMeans, int n_iter,
             Method method, bool display, bool verbose) :
             display_(display),
             max_level_(max_level),
-            min_level_(min_level) {
+            min_level_(min_level),
+            sparseChi2(m_chi2),
+            sparseNMeans(m_nMeans) {
         n_iter_ = n_iter;
         n_iter_init_ = n_iter_;
         method_ = method;
@@ -89,7 +91,7 @@ cout<<"--------------------------------------------"<<endl;
 
             optimize(T_cur_from_ref,_chi2);
 //            cout<<endl;
-            if (_chi2 > 700 || n_meas_ < 1500){
+            if (_chi2 > sparseChi2 || n_meas_ < sparseNMeans){
                 cout<<"_chi2:" <<_chi2<<" > x || n_meas_ < y:"<<n_meas_<<endl;
                 return false;
             }

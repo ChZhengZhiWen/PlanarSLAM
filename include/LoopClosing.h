@@ -80,9 +80,9 @@ namespace Planar_SLAM
         bool isFinished();
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-        vector<cv::Mat> kfImg;
         vector<KeyFrame*> allKeyFrame;
-//        std::map<int,KeyFrame*> allKeyFrame;
+        vector<double> msg;
+
     protected:
 
         bool CheckNewKeyFrames();

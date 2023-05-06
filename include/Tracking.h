@@ -316,6 +316,10 @@ protected:
 
     int failedNum ;
 
+    vector<cv::Mat> firstManhattanForLoop;
+    float sparseChi2;
+    float sparseNMeans;
+
 };
 
 } //namespace ORB_SLAM

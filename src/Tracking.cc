@@ -126,7 +126,10 @@ namespace Planar_SLAM {
                 mDepthMapFactor = 1.0f / mDepthMapFactor;
         }
 
-        mpAlign = new Planar_SLAM::SparseImgAlign(nLevels - 1, 1);
+        sparseChi2 = fSettings["Sparse.chi2"];
+        sparseNMeans = fSettings["Sparse.nMeans"];
+
+        mpAlign = new Planar_SLAM::SparseImgAlign(nLevels - 1, 1,sparseChi2,sparseNMeans);
 
         mfDThRef = fSettings["Plane.AssociationDisRef"];
         mfDThMon = fSettings["Plane.AssociationDisMon"];
@@ -319,6 +322,19 @@ namespace Planar_SLAM {
                             bOK = TranslationEstimation_MW();
                     }
                 }
+
+
+                auto temp = Converter::toSE3Quat(mCurrentFrame.mTcw * mLastFrame.mTcw.inv());
+                auto error = temp.log().norm();
+                error = sqrt(error*error);
+                if (error > 0.05){
+                    if (mVelocity.empty()){
+                        mCurrentFrame.SetPose(mLastFrame.mTcw);
+                    }
+                    bOK = TranslationWithMotionModel();
+                    if (!bOK)
+                        bOK = TranslationEstimation_MW();
+                }
             }
 
             // 将最新的关键帧作为当前帧的参考关键帧
@@ -491,6 +507,7 @@ namespace Planar_SLAM {
             mLastFrame = Frame(mCurrentFrame);
         }
 
+        //给关键帧计算曼哈顿轴与线特征的对数四元数误差
         if (mpReferenceKF->mvManhattanForLoop.empty())
             addManhattanForLoop(mpReferenceKF);
 
@@ -4363,6 +4380,14 @@ namespace Planar_SLAM {
             pF->mvManhattanForLoop.push_back(sort[0]);
             pF->mvManhattanForLoop.push_back(sort[1]);
             pF->mvManhattanForLoop.push_back(sort[2]);
+
+
+            ///都所有帧使用相同的曼哈顿轴
+//            if (pF->mnId==0)
+//                firstManhattanForLoop = pF->mvManhattanForLoop;
+//            pF->mvManhattanForLoop = firstManhattanForLoop;
+
+
 
             cv::Mat first, second, third;
             first = sort[0];

@@ -32,6 +32,8 @@ namespace Planar_SLAM {
         SparseImgAlign(
                 int n_levels,
                 int min_level,
+                float m_chi2,
+                float m_nMeans,
                 int n_iter = 10,
                 Method method = GaussNewton,
                 bool display = false,
@@ -63,6 +65,9 @@ namespace Planar_SLAM {
         bool display_;                  //!< display residual image.
         int max_level_;                 //!< coarsest pyramid level for the alignment.
         int min_level_;                 //!< finest pyramid level for the alignment.
+
+        float sparseChi2;
+        float sparseNMeans;
 
         // cache:
         Matrix<float, 6, Dynamic, ColMajor> jacobian_cache_;    // 雅可比矩阵，这个东西是固定下来的

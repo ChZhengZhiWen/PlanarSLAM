@@ -365,14 +365,17 @@ namespace Planar_SLAM {
     }
 
     vector<KeyFrame *>
-    KeyFrameDatabase::DetectLoopCandidatesAllkeyframe(KeyFrame *pKF, float minScore, vector<KeyFrame *> vec,vector<float> avgLineManScore) {
+    KeyFrameDatabase::DetectLoopCandidatesAllkeyframe(KeyFrame *pKF, float minScore, vector<KeyFrame *> allKF,vector<float> avgLineManScore) {
         vector<KeyFrame *> ret;
-        int len = vec.size();
-        cout << "minScore = " << minScore << endl;
+        map<float,KeyFrame *> candidatesRet;
+        vector<float> scoreForSort;
+
+        int len = allKF.size();
+//        cout << "minScore = " << minScore << endl;
         vector<float> cur_line_manhattan = pKF->line_manhattan_err;
         for (int i = 0; i < len - 1000; i++) {
 
-            vector<float> lKFs_line_manhattan = vec[i]->line_manhattan_err;
+            vector<float> lKFs_line_manhattan = allKF[i]->line_manhattan_err;
             int num = 0;
             vector<float> differ = {-99, -99, -99};
             for (int j = 0; j < 3; ++j) {
@@ -392,11 +395,21 @@ namespace Planar_SLAM {
             if (num < 2)
                 continue;
 
-            float s = mpVoc->score(pKF->mBowVec, vec[i]->mBowVec);
-            cout << s << " ";
-            if (s > minScore)ret.push_back(vec[i]);
+            float score = mpVoc->score(pKF->mBowVec, allKF[i]->mBowVec);
+            if (score > minScore){
+                scoreForSort.push_back(score);
+                candidatesRet[score]=allKF[i];
+            }
         }
-        cout << endl;
+
+
+        if (!scoreForSort.empty()){
+            sort(scoreForSort.rbegin(), scoreForSort.rend());
+            for (int i = 0; i < min(50,int(scoreForSort.size())); ++i) {
+                ret.push_back(candidatesRet[scoreForSort[i]]);
+            }
+        }
+
         return ret;
     }
 

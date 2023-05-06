@@ -79,10 +79,10 @@ namespace Planar_SLAM
 
                         // Perform loop fusion and pose graph optimization
                         CorrectLoop();
-//unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
-//mpTracker->loopStop = true;
-//getchar();
-//cout<<"loop stop -------------------------------"<<endl;
+unique_lock<mutex> lock(mpTracker->mMutexLoopStop);
+mpTracker->loopStop = true;
+getchar();
+cout<<"loop stop -------------------------------"<<endl;
                     }
                 }
             }
@@ -306,8 +306,8 @@ namespace Planar_SLAM
                 minScore = score;
         }
 
-        if (minScore == -0)
-            minScore = 0.02;
+        if (minScore == -0 || minScore == 1)
+            minScore = 0.01;
 
         if (minScore == 1){
             cout<<"vpConnectedKeyFrames.size "<<vpConnectedKeyFrames.size()<<endl;
@@ -368,38 +368,17 @@ namespace Planar_SLAM
             return false;
         }
 
-//        vector<KeyFrame*> vpCandidateKFsManhattan;
-//
-//        for (auto lit: vpCandidateKFs) {
-//            vector<float> lKFs_line_manhattan = mpKeyFrameDB->computeLineManhattan(lit);
-//            int num = 0;
-//            vector<float> differ = {-99, -99, -99};
-//            for (int j = 0; j < 3; ++j) {
-//                if (cur_line_manhattan[j] == -1 || lKFs_line_manhattan[j] == -1)
-//                    continue;
-//                differ[j] = abs(cur_line_manhattan[j] - lKFs_line_manhattan[j]);
-//                float _min;
-//                if (avgLineManScore[j] < 0.1) {
-//                    _min = avgLineManScore[j];
-//                } else {
-//                    _min = 0.1;
-//                }
-//                if (differ[j] <= _min)
-//                    num++;
-//            }
-//
-//            if (num >= 2)
-//                vpCandidateKFsManhattan.push_back(lit);
-//        }
-//        vpCandidateKFs = vpCandidateKFsManhattan;
-
-
-
         // For each loop candidate check consistency with previous loop candidates
         // Each candidate expands a covisibility group (keyframes connected to the loop candidate in the covisibility graph)
         // A group is consistent with a previous group if they share at least a keyframe
         // We must detect a consistent loop in several consecutive keyframes to accept it
         mvpEnoughConsistentCandidates.clear();
+        for (auto x:vpCandidateKFs) {
+            mvpEnoughConsistentCandidates.push_back(x);
+        }
+        return true;
+
+
 
         vector<ConsistentGroup> vCurrentConsistentGroups;
         vector<bool> vbConsistentGroup(mvConsistentGroups.size(),false);
@@ -540,7 +519,6 @@ namespace Planar_SLAM
                     continue;
 
                 KeyFrame* pKF = mvpEnoughConsistentCandidates[i];
-kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
 
 
                 // Perform 5 Ransac Iterations
@@ -692,11 +670,6 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
                         cv::imshow("Sum1",Sum1);
 * /
 
-//                        int n = 0;
-//                        for (const auto& img:kfImg) {
-//                            cv::imshow(to_string(n),img);
-//                            n++;
-//                        }
 
 
 
@@ -881,6 +854,9 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
                     nCandidates--;
                 }
 
+//                cv::Mat T_cur_pKF = fineRAndT(mpCurrentKF->mvImagePyramid_zzw[0],pKF->mvImagePyramid_zzw[0],mpCurrentKF->mK);
+
+
                 // If RANSAC returns a Sim3, perform a guided matching and optimize with all correspondences
                 if(!Scm.empty())
                 {
@@ -899,36 +875,33 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
                     g2o::Sim3 gScm(Converter::toMatrix3d(R),Converter::toVector3d(t),s);
                     const int nInliers = Optimizer::OptimizeSim3(mpCurrentKF, pKF, vpMapPointMatches, gScm, 10, mbFixScale);
 
-//                    cv::Mat current_pose1 = mpCurrentKF->GetPose();
-//                    cv::Mat detect_pose1 = pKF->GetPose();
-//                    cv::Mat T1 = Planar_SLAM::Converter::toCvMat(gScm);
-//                    cv::Mat ans1 = detect_pose1 * T1;
-//                    auto temp1 = Converter::toSE3Quat(ans1*current_pose1.inv());
-//                    auto error1 = temp1.log().norm();
-//                    error1 = sqrt(error1*error1);
+                    cv::Mat current_pose = mpCurrentKF->GetPose();
+                    cv::Mat detect_pose = pKF->GetPose();
+                    cv::Mat T1 = Planar_SLAM::Converter::toCvMat(gScm);
+                    cv::Mat ans = T1*detect_pose;
+                    auto temp = Converter::toSE3Quat(ans*current_pose.inv());
+                    auto error = temp.log().norm();
+                    error = sqrt(error*error);
 
+                    int maxInlier = 0;
 
                     // If optimization is succesful stop ransacs and continue
-                    if(nInliers>=20)
+                    if(nInliers>=30 && error < 0.065)
                     {
-                        bMatch = true;
-                        mpMatchedKF = pKF;
-                        g2o::Sim3 gSmw(Converter::toMatrix3d(pKF->GetRotation()),Converter::toVector3d(pKF->GetTranslation()),1.0);
-                        mg2oScw = gScm*gSmw;
-                        mScw = Converter::toCvMat(mg2oScw);
+                        if (nInliers > maxInlier){
+                            maxInlier = nInliers;
+                            bMatch = true;
+                            mpMatchedKF = pKF;
+                            g2o::Sim3 gSmw(Converter::toMatrix3d(pKF->GetRotation()),Converter::toVector3d(pKF->GetTranslation()),1.0);
+                            mg2oScw = gScm*gSmw;
+                            mScw = Converter::toCvMat(mg2oScw);
 
-                        mvpCurrentMatchedPoints = vpMapPointMatches;
+                            mvpCurrentMatchedPoints = vpMapPointMatches;
 
-
-//                        if(error1 < min_error)
-//                        {
-//                            min_error = error1;
-//                            last_select = pKF;
-//                            error_mg2oScw = gScm*gSmw;
-//                            error_mScw = Converter::toCvMat(error_mg2oScw);
-//                            error_CurrentMatchedPoints = vpMapPointMatches;
-//                        }
-
+                            msg.push_back(error);
+                            msg.push_back(nInliers);
+                            msg.push_back(-99999);
+                        }
     //                    break;
                     }
                 }
@@ -943,6 +916,7 @@ kfImg.push_back(pKF->mvImagePyramid_zzw[0].clone());
             return false;
         }
 
+        msg.push_back(-1111);
 
 //        mpMatchedKF = last_select;
 //        mg2oScw = error_mg2oScw;
