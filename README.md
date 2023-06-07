@@ -9,14 +9,9 @@ We updated the planar meshing section by making use of a more efficient triangul
 
 ps: the reconstruction method is still very naive, we will keep moving.
 
-![planarReconstruction](Examples/planarReconstruction.png)
+
 
 ----
-
-
-
-<a href="https://www.youtube.com/watch?v=zvmnCFIp58U"><img src="Examples/ICRA21-teasear.png"/></a>
-
 ## License
 
 PlanarSLAM is released under a GPLv3 license.
@@ -123,3 +118,33 @@ inproceedings{Li2021PlanarSLAM,
 
 ORB_SLAM2 and the corresponding community.
 
+slam基础环境配置
+
+1.安装Ubuntu18.04双系统   具体可参考 https://blog.csdn.net/qq_42257666/article/details/123709678
+
+2.安装g++、git（gcc系统自带） sudo apt-get install g++ git
+
+3.源码安装cmake  cmake官网（https://www.baidu.com/link?url=h4ytas70nqIij9PreyTc6d3lP9tRqdGQnGYGI9gMHF7&wd=&eqid=e38ed27c00027a190000000664167523）
+首先安装依赖 sudo apt-get install build-essential libssl-dev
+解压后进入cmake  ./bootstrap
+make -j12
+sudo make install
+
+4.安装eigen3  sudo apt-get install libeigen3-dev  通过命令行安装的eigen版本为 3.3.4
+
+5.源码安装Pangolin   依赖安装 sudo apt-get install libglew-dev libboost-dev libboost-thread-dev libboost-filesystem-dev
+下载源码 git clone https://github.com/stevenlovegrove/Pangolin.git
+cd Pangolin && mkdir build && cmake .. && make -j12 && sudo make install
+测试是否安装成功  cd Pangolin/build/examples/HelloPangolin && ./HelloPangolin
+出现彩色正方体则安装成功
+
+6.安装opecv3.4.1与opencv_contrib3.4.1  详细过程参考  https://blog.csdn.net/xhtchina/article/details/126422425?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522167919381716800184198516%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&request_id=167919381716800184198516&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~times_rank-2-126422425-null-null.142^v74^insert_down4,201^v4^add_ask,239^v2^insert_chatgpt&utm_term=ubuntu18%E5%AE%89%E8%A3%85opencv3.4.1%E4%B8%8Eopencv%20contrib&spm=1018.2226.3001.4187
+安装过程遇到的问题请参考  https://blog.csdn.net/qq_57061492/article/details/127873444?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522167919381716800184198516%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&request_id=167919381716800184198516&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~times_rank-1-127873444-null-null.142^v74^insert_down4,201^v4^add_ask,239^v2^insert_chatgpt&utm_term=ubuntu18%E5%AE%89%E8%A3%85opencv3.4.1%E4%B8%8Eopencv%20contrib&spm=1018.2226.3001.4187
+测试是否安装成功   cd ../samples/cpp/example_cmake
+cmake .
+make
+./opencv_example
+电脑摄像头打开即为安装成功
+
+7.安装pcl1.9.0   具体可参考 https://blog.csdn.net/qq_42257666/article/details/124574029?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522167919417216800180641165%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&request_id=167919417216800180641165&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~times_rank-8-124574029-null-null.142^v74^insert_down4,201^v4^add_ask,239^v2^insert_chatgpt&utm_term=ubuntu18%E5%AE%89%E8%A3%85pcl1.9.1&spm=1018.2226.3001.4187
+建议pcl1.9.0 + vtk7.1.1    vtk编译出现找不到qt的错误时   sudo apt-get install qt4-default

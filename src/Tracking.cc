@@ -4212,6 +4212,9 @@ namespace Planar_SLAM {
     }
 
     void Tracking::addManhattanForLoop(KeyFrame *pF) {
+        if (!pF->mvManhattanForLoop.empty())
+            return;
+
         cv::Mat bestP1, bestP2;
         float lverTh = mfMFVerTh;
         int maxSize = 0;
@@ -4414,7 +4417,12 @@ namespace Planar_SLAM {
 
         manhattan_Rotation_cm.copyTo(pF->mManhattan_Rotation_cm);
 
-
+        if (pF->mvManhattanForLoop.empty()) {
+            pF->line_manhattan_err.push_back(-99);
+            pF->line_manhattan_err.push_back(-99);
+            pF->line_manhattan_err.push_back(-99);
+            return;
+        }
 
         vector<cv::Mat> parallelLine1, parallelLine2, parallelLine3;
         for (int i = 0; i < 3; ++i) {

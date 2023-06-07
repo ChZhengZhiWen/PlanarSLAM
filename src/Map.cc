@@ -343,8 +343,6 @@ namespace Planar_SLAM {
 
             std::map<int, cv::Mat> sort;
             if (loc1 == loc2 || loc1 == loc3 || loc2 == loc3){
-                cout<<"444444444444444444444444444"<<endl;
-                getchar();
                 if (loc1 == loc2){
                     sort[loc1] = bestP1;
                     sort[loc3] = p3;

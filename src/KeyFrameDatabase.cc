@@ -371,7 +371,6 @@ namespace Planar_SLAM {
         vector<float> scoreForSort;
 
         int len = allKF.size();
-//        cout << "minScore = " << minScore << endl;
         vector<float> cur_line_manhattan = pKF->line_manhattan_err;
         for (int i = 0; i < len - 1000; i++) {
 
@@ -396,19 +395,22 @@ namespace Planar_SLAM {
                 continue;
 
             float score = mpVoc->score(pKF->mBowVec, allKF[i]->mBowVec);
-            if (score > minScore){
-                scoreForSort.push_back(score);
-                candidatesRet[score]=allKF[i];
-            }
+            cout<<score<<" ";
+            if (score > minScore)
+                ret.push_back(allKF[i]);
+//            if (score > minScore){
+//                scoreForSort.push_back(score);
+//                candidatesRet[score]=allKF[i];
+//            }
         }
 
 
-        if (!scoreForSort.empty()){
-            sort(scoreForSort.rbegin(), scoreForSort.rend());
-            for (int i = 0; i < min(50,int(scoreForSort.size())); ++i) {
-                ret.push_back(candidatesRet[scoreForSort[i]]);
-            }
-        }
+//        if (!scoreForSort.empty()){
+//            sort(scoreForSort.rbegin(), scoreForSort.rend());
+//            for (int i = 0; i < min(50,int(scoreForSort.size())); ++i) {
+//                ret.push_back(candidatesRet[scoreForSort[i]]);
+//            }
+//        }
 
         return ret;
     }

@@ -309,15 +309,6 @@ cout<<"loop stop -------------------------------"<<endl;
         if (minScore == -0 || minScore == 1)
             minScore = 0.01;
 
-        if (minScore == 1){
-            cout<<"vpConnectedKeyFrames.size "<<vpConnectedKeyFrames.size()<<endl;
-            cout<<"mpCurrentKF id "<<mpCurrentKF->mnId<<"  "<<mpCurrentKF->mnFrameId<<endl;
-            for (auto x:tem) {
-                cout<<x<<" ";
-            }
-            cout<<endl;
-        }
-
         //计算当前关键帧线段与曼哈顿轴之间的误差与每个共视关键线段与曼哈顿轴之间的误差之差的最大值
         vector<float> cur_line_manhattan = mpCurrentKF->line_manhattan_err;
         vector<float> minLineManScore = {99,99,99};
@@ -823,13 +814,6 @@ cout<<"loop stop -------------------------------"<<endl;
 
         // Perform alternatively RANSAC iterations for each candidate
         // until one is succesful or all fail
-
-        KeyFrame* last_select = mpCurrentKF;
-        double min_error = 1;
-        g2o::Sim3 error_mg2oScw;
-        cv::Mat error_mScw;
-        std::vector<MapPoint*> error_CurrentMatchedPoints;
-
         while(nCandidates>0 && !bMatch)
         {
             for(int i=0; i<nInitialCandidates; i++)
@@ -853,9 +837,6 @@ cout<<"loop stop -------------------------------"<<endl;
                     vbDiscarded[i]=true;
                     nCandidates--;
                 }
-
-//                cv::Mat T_cur_pKF = fineRAndT(mpCurrentKF->mvImagePyramid_zzw[0],pKF->mvImagePyramid_zzw[0],mpCurrentKF->mK);
-
 
                 // If RANSAC returns a Sim3, perform a guided matching and optimize with all correspondences
                 if(!Scm.empty())
@@ -917,11 +898,6 @@ cout<<"loop stop -------------------------------"<<endl;
         }
 
         msg.push_back(-1111);
-
-//        mpMatchedKF = last_select;
-//        mg2oScw = error_mg2oScw;
-//        mScw = error_mScw;
-//        mvpCurrentMatchedPoints = error_CurrentMatchedPoints;
 
         // Retrieve MapPoints seen in Loop Keyframe and neighbors
         vector<KeyFrame*> vpLoopConnectedKFs = mpMatchedKF->GetVectorCovisibleKeyFrames();

@@ -104,9 +104,9 @@ Plane.DetectManhattanThreshold:0.0349 # 88 degree
 #Plane.DetectManhattanThreshold:0.08716 # 85 degree
 
 Sparse.chi2 : 700
-#Sparse.nMeans : 1500
+Sparse.nMeans : 1500
 #Sparse.nMeans : 2000
-Sparse.nMeans : 2500
+#Sparse.nMeans : 2500
 #Sparse.nMeans : 3000
 
 #Plane.AngleInfo: 57.3 # 1 degree
