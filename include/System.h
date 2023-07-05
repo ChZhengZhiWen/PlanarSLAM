@@ -98,7 +98,7 @@ public:
     void SaveKeyFrameTrajectoryTUM(const string &filename);
 
     // Save planar mesh into a ply file
-    void SaveMesh(const string &filename);
+//    void SaveMesh(const string &filename);
 
 
     // TODO: Save/Load functions

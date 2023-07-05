@@ -58,7 +58,7 @@ void Viewer::RunWithPLP()
         pangolin::Var<bool> menuVideo("menu.Save 2D Frames",false,true);
         pangolin::Var<bool> menuVideo3D("menu.Save Sparse Map",false,true);
         pangolin::Var<bool> menuScreenshot("menu.Screenshot 2D Frame",false, false);
-        pangolin::Var<bool> menuScreenshotMesh("menu.Screenshot Mesh",false, false);
+//        pangolin::Var<bool> menuScreenshotMesh("menu.Screenshot Mesh",false, false);
 
         pangolin::OpenGlRenderState s_cam(
                 pangolin::ProjectionMatrix(1024, 768, mViewpointF, mViewpointF, 512, 389, 0.1, 1000),
@@ -128,11 +128,11 @@ void Viewer::RunWithPLP()
                 menuScreenshot = false;
             }
 
-            if(menuScreenshotMesh)
-            {
-                mpTracker->SaveMesh("Screenshot.ply");
-                menuScreenshot = false;
-            }
+//            if(menuScreenshotMesh)
+//            {
+//                mpTracker->SaveMesh("Screenshot.ply");
+//                menuScreenshot = false;
+//            }
 
             if (menuVideo) {
                 // Save video

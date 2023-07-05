@@ -144,7 +144,7 @@ namespace Planar_SLAM {
         manhattanCount = 0;
         fullManhattanCount = 0;
 
-        mpPointCloudMapping = make_shared<MeshViewer>(mpMap);
+//        mpPointCloudMapping = make_shared<MeshViewer>(mpMap);
 
         failedNum = 0;
 
@@ -380,7 +380,7 @@ namespace Planar_SLAM {
                 }
             }
 
-            mpPointCloudMapping->print();
+//            mpPointCloudMapping->print();
 
             // If tracking were good, check if we insert a keyframe
             if (bOK) {
@@ -663,7 +663,7 @@ namespace Planar_SLAM {
                 }
             }
 
-            mpPointCloudMapping->print();
+//            mpPointCloudMapping->print();
 
             // If tracking were good, check if we insert a keyframe
             if (bOK) {
@@ -1633,7 +1633,7 @@ namespace Planar_SLAM {
                 mCurrentFrame.mvpMapPlanes[i] = pNewMP;
             }
 
-            mpPointCloudMapping->print();
+//            mpPointCloudMapping->print();
 
             // 在局部地图中添加该初始关键帧
             mpLocalMapper->InsertKeyFrame(pKFini);
@@ -1744,7 +1744,7 @@ namespace Planar_SLAM {
                 mCurrentFrame.mvpMapPlanes[i] = pNewMP;
             }
 
-            mpPointCloudMapping->print();
+//            mpPointCloudMapping->print();
 
             // 在局部地图中添加该初始关键帧
             mpLocalMapper->InsertKeyFrame(pKFini);
@@ -3402,7 +3402,7 @@ namespace Planar_SLAM {
                 mpMap->AddMapPlane(pNewMP);
             }
 
-            mpPointCloudMapping->print();
+//            mpPointCloudMapping->print();
 
             cout << "New map created with " << mpMap->MapPlanesInMap() << " planes" << endl;
         }
@@ -3922,11 +3922,11 @@ namespace Planar_SLAM {
         mbOnlyTracking = flag;
     }
 
-    void Tracking::SaveMesh(const string &filename) {
-        //
-        mpPointCloudMapping->SaveMeshModel(filename);
-
-    }
+//    void Tracking::SaveMesh(const string &filename) {
+//        //
+//        mpPointCloudMapping->SaveMeshModel(filename);
+//
+//    }
 
     bool Tracking::TrackWithSparseAlignment() {
         // 更新上一帧的信息（因为可能被其他线程修改）

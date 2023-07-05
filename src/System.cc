@@ -364,11 +364,11 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
     }
 }
 
-void System::SaveMesh(const string&filename){
-    cout << endl << "Saving camera trajectory to " << filename << " ..." << endl;
-    mpTracker->SaveMesh(filename);
-    cout<< "mesh saved!"<<endl;
-}
+//void System::SaveMesh(const string&filename){
+//    cout << endl << "Saving camera trajectory to " << filename << " ..." << endl;
+//    mpTracker->SaveMesh(filename);
+//    cout<< "mesh saved!"<<endl;
+//}
 
 
 
