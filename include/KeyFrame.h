@@ -273,6 +273,8 @@ namespace Planar_SLAM
         cv::Mat mManhattan_Rotation_cm;
         vector<float> line_manhattan_err;
 
+        std::vector<PointCloud::Ptr> mpcBoundaryCloud;
+
         void AddMapPlane(MapPlane* pMP, const int &idx);
         void AddMapVerticalPlane(MapPlane* pMP, const int &idx);
         void AddMapParallelPlane(MapPlane* pMP, const int &idx);

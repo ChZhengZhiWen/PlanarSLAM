@@ -4,10 +4,11 @@
 #include "Tracking.h"
 #include "MapPoint.h"
 #include "Map.h"
-
+#include "Frame.h"
 #include<opencv2/core/core.hpp>
 #include<opencv2/features2d/features2d.hpp>
-
+#include <pcl/features/boundary.h>
+#include <pcl/features/normal_3d.h>
 #include<mutex>
 
 
@@ -20,6 +21,9 @@ namespace Planar_SLAM
     class FrameDrawer
     {
     public:
+        typedef pcl::PointXYZRGB PointT;
+        typedef pcl::PointCloud <PointT> PointCloud;
+
         FrameDrawer(Map* pMap);
 
         // Update info from the last processed frame.
@@ -27,6 +31,14 @@ namespace Planar_SLAM
 
         // Draw last processed frame.
         cv::Mat DrawFrame();
+
+
+
+        std::vector<int> boundaryIndices;
+        PointCloud::Ptr _inputCloud;
+
+        std::vector< pair<PointT,PointT> > mvAllPlaneEdgeLine;
+        bool mHavePlaneEdge;
 
     protected:
 
@@ -60,6 +72,8 @@ namespace Planar_SLAM
         Map* mpMap;
 
         std::mutex mMutex;
+
+        Frame curFrame;
     };
 
 } //namespace Planar_SLAM

@@ -99,27 +99,6 @@ namespace Planar_SLAM {
         int normTh = 20;
 
         int segNum;
-        std::vector<Vector2f> xyz_ref_compute;
-        std::vector<Vector2f> xyz_ref_computeEnd;
-        std::vector<Vector2f> xyz_cur_compute;
-        std::vector<Vector2f> xyz_cur_computeEnd;
-
-        std::vector<Vector2f> preCompute;
-        std::vector<Vector3f> preCompute3D;
-        std::vector<Vector3f> preCompute3DEnd;
-        std::vector<Vector2f> preComputeEnd;
-
-        std::map<int,Vector2f> prePointCompute;
-
-
-        std::map<int,std::vector<Vector2f>> preCompute_map;
-        std::map<int,std::vector<Vector3f>> preCompute3D_map;
-        std::map<int,std::vector<Vector3f>> preCompute3DEnd_map;
-        std::map<int,std::vector<Vector2f>> preComputeEnd_map;
-        std::map<int,std::vector<Vector2f>> xyz_ref_compute_map;
-        std::map<int,std::vector<Vector2f>> xyz_ref_computeEnd_map;
-        std::map<int,std::vector<Vector2f>> xyz_cur_compute_map;
-        std::map<int,std::vector<Vector2f>> xyz_cur_computeEnd_map;
 
         // 在ref中计算雅可比
         void precomputeReferencePatches();

@@ -145,6 +145,8 @@ namespace Planar_SLAM
             return T_c_w * p_w;
         }
 
+        void ComputePlaneEdge();
+
 
     public:
         // Vocabulary used for relocalization.
@@ -276,6 +278,10 @@ namespace Planar_SLAM
         static bool mbInitialComputations;
 
         std::vector<PointCloud> mvPlanePoints;
+        std::vector<PointCloud::Ptr> mvPlanePointsAll;
+        std::vector< pair<PointT,PointT> > allPlaneEdgeLine;
+        bool havePlaneEdge;
+
         std::vector<cv::Mat> mvPlaneCoefficients;
         std::vector<MapPlane*> mvpMapPlanes;
         std::vector<MapPlane*> mvpParallelPlanes;

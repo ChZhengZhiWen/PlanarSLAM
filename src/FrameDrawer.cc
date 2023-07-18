@@ -3,6 +3,8 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include<mutex>
+#include <pcl/common/distances.h>
+#include <algorithm>
 
 using namespace std;
 using namespace cv;
@@ -139,6 +141,146 @@ namespace Planar_SLAM
                     int u2 = mvStructLinez[j][3].x; int v2 = mvStructLinez[j][3].y;
                     cv::line(im, cv::Point2f(u1,v1),cv::Point2f(u2,v2), cv::Scalar(255, 0, 0),4);
                 }
+
+
+/*
+                if (!_IntersectionLine.empty()){
+                    for (auto it = _IntersectionLine.begin(); it !=_IntersectionLine.end(); ++it) {
+                        if (it->first.first < 0 || it->first.first > curFrame.mvPlaneCoefficients.size() || it->first.second < 0 || it->first.second > curFrame.mvPlaneCoefficients.size())
+                            continue;
+                        float a = it->second.first(0,0);
+                        float b = it->second.first(1,0);
+                        float c = it->second.first(2,0);
+                        float x0 = it->second.second(0,0);
+                        float y0 = it->second.second(1,0);
+                        float z0 = it->second.second(2,0);
+
+                        auto planeIndex = it->first;
+
+                        std::vector<PointT> cloudPointsMoreP1;
+                        std::vector<PointT> cloudPointsLessP1;
+                        std::vector<PointT> cloudPointsMoreP2;
+                        std::vector<PointT> cloudPointsLessP2;
+                        std::vector<PointT> cloudPointsEdge;
+
+                        for(auto cloudPoints : *curFrame.mvPlanePointsAll[planeIndex.first]){
+                            float x = cloudPoints.x;
+                            float y = cloudPoints.y;
+                            float z = cloudPoints.z;
+                            float t = (x - x0) / a;
+                            float judgment1 = fabs(t - ((y - y0) / b));
+                            float judgment2 = fabs(t - ((z - z0) / c));
+
+                            if ( judgment1 < 0.2 && judgment2 < 0.2 ){
+                                cloudPointsMoreP1.push_back(cloudPoints);
+                                if ( judgment1 < 0.03 && judgment2 < 0.03 )
+                                    cloudPointsLessP1.push_back(cloudPoints);
+                            }
+                        }
+                        for(auto cloudPoints : *curFrame.mvPlanePointsAll[planeIndex.second]){
+                            float x = cloudPoints.x;
+                            float y = cloudPoints.y;
+                            float z = cloudPoints.z;
+                            float t = (x - x0) / a;
+                            float judgment1 = fabs(t - ((y - y0) / b));
+                            float judgment2 = fabs(t - ((z - z0) / c));
+
+                            if ( judgment1 < 0.2 && judgment2 < 0.2 ){
+                                cloudPointsMoreP2.push_back(cloudPoints);
+                                if ( judgment1 < 0.03 && judgment2 < 0.03 )
+                                    cloudPointsLessP2.push_back(cloudPoints);
+                            }
+                        }
+
+                        float min = 100;
+                        for (auto point:cloudPointsLessP1) {
+                            for (auto anotherPlanePoint:cloudPointsMoreP2) {
+                                float distance = pcl::euclideanDistance(point, anotherPlanePoint);
+                                if (distance < min)
+                                    min = distance;
+                            }
+                            if (min < 0.005)
+                                cloudPointsEdge.push_back(point);
+                        }
+                        min = 100;
+                        for (auto point:cloudPointsLessP2) {
+                            for (auto anotherPlanePoint:cloudPointsMoreP1) {
+                                float distance = pcl::euclideanDistance(point, anotherPlanePoint);
+                                if (distance < min)
+                                    min = distance;
+                            }
+                            if (min < 0.005)
+                                cloudPointsEdge.push_back(point);
+                        }
+
+                        for (auto p:cloudPointsEdge) {
+                            Vector3f worldPos;
+                            worldPos[0]=p.x;
+                            worldPos[1]=p.y;
+                            worldPos[2]=p.z;
+                            Vector2f pixelPos = curFrame.Camera2Pixel(worldPos);
+                            float u=pixelPos[0];
+                            float v=pixelPos[1];
+                            if (u>im.cols || v>im.rows || u <=0.0 ||v<=0.0){
+                                continue;
+                            }
+
+                            cv::circle(im, cv::Point2f(u, v), 1, cv::Scalar(0, 0, 255), -1);
+                        }
+
+
+
+                    }
+                }
+*/
+
+                if (mHavePlaneEdge){
+                    for (auto pair:mvAllPlaneEdgeLine) {
+                        Vector3f startPoint;
+                        Vector3f endPoint;
+                        startPoint[0]=pair.first.x;
+                        startPoint[1]=pair.first.y;
+                        startPoint[2]=pair.first.z;
+                        endPoint[0]=pair.second.x;
+                        endPoint[1]=pair.second.y;
+                        endPoint[2]=pair.second.z;
+                        Vector2f pixelStartPoint = curFrame.Camera2Pixel(startPoint);
+                        Vector2f pixelEndPoint   = curFrame.Camera2Pixel(endPoint);
+                        float su=pixelStartPoint[0];
+                        float sv=pixelStartPoint[1];
+                        if (su>im.cols || sv>im.rows || su <=0.0 ||sv<=0.0){
+                            continue;
+                        }
+                        float eu=pixelEndPoint[0];
+                        float ev=pixelEndPoint[1];
+                        if (eu>im.cols || ev>im.rows || eu <=0.0 ||ev<=0.0){
+                            continue;
+                        }
+                        cv::line(im, cv::Point2f(su,sv),cv::Point2f(eu,ev), cv::Scalar(0, 0, 255),4);
+                    }
+                }
+
+
+
+//                for (std::size_t i = 0; i < boundaryIndices.size(); ++i) {
+//                    float pointIndex = boundaryIndices[i];
+//                    PointT point = _inputCloud->at(pointIndex);
+//                    float x = point.x;
+//                    float y = point.y;
+//                    float z = point.z;
+//                    Vector3f worldPos;
+//                    worldPos[0]=x;
+//                    worldPos[1]=y;
+//                    worldPos[2]=z;
+//                    Vector2f pixelPos = curFrame.Camera2Pixel(worldPos);
+//                    float u=pixelPos[0];
+//                    float v=pixelPos[1];
+//                    if (u>im.cols || v>im.rows || u <=0.0 ||v<=0.0){
+//                        continue;
+//                    }
+//                    cv::circle(im, cv::Point2f(u, v), 1, cv::Scalar(0, 255, 0), -1);
+//                }
+
             }
 
             for(int i=0;i<n;i++)
@@ -249,6 +391,11 @@ namespace Planar_SLAM
         mvbLineVO = vector<bool>(NL, false);
         mvbLineMap = vector<bool>(NL, false);
 
+        mHavePlaneEdge = pTracker->mCurrentFrame.havePlaneEdge;
+        mvAllPlaneEdgeLine = pTracker->mCurrentFrame.allPlaneEdgeLine;
+
+        curFrame = pTracker->mCurrentFrame;
+
         if(pTracker->mLastProcessedState==Tracking::NOT_INITIALIZED)
         {
             mvIniKeys=pTracker->mInitialFrame.mvKeys;
@@ -287,6 +434,58 @@ namespace Planar_SLAM
                     }
                 }
             }
+
+
+ /* pcl边缘检测
+// 计算法向量
+
+            PointCloud::Ptr inputCloud(new PointCloud());
+            for (auto plane:curFrame.mvPlanePointsPtr) {
+                for (auto point:*plane) {
+                    inputCloud->points.push_back(point);
+                }
+            }
+
+            _inputCloud = inputCloud;
+
+            pcl::NormalEstimation<PointT , pcl::Normal> ne;
+            ne.setInputCloud(inputCloud);
+            pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
+            ne.setSearchMethod(tree);
+            pcl::PointCloud<pcl::Normal>::Ptr input_cloud_normals(new pcl::PointCloud<pcl::Normal>());
+            ne.setKSearch(20);  // 设置法线估计的K值
+            ne.setViewPoint(0,0,0);
+            ne.compute(*input_cloud_normals);
+
+            // 边界点估计
+            pcl::BoundaryEstimation<PointT, pcl::Normal, pcl::Boundary> est;
+            pcl::PointCloud<pcl::Boundary>::Ptr boundaries(new pcl::PointCloud<pcl::Boundary>());
+            est.setInputCloud(inputCloud);
+            est.setInputNormals(input_cloud_normals);
+            est.setSearchMethod(tree);
+//            est.setKSearch(30);
+            est.setRadiusSearch(1);  // 设置边界估计的半径
+            est.compute(*boundaries);
+
+// 获取边界点索引
+            std::vector<int> boundary_indices;
+            for (size_t i = 0; i < boundaries->size(); ++i) {
+                if ((*boundaries)[i].boundary_point > 0) {
+                    boundary_indices.push_back(i);
+                }
+            }
+            boundaryIndices = boundary_indices;
+
+// 使用边界索引提取边界点云数据
+            PointCloud::Ptr boundary_cloud(new pcl::PointCloud<PointT>());
+            pcl::ExtractIndices<PointT> extract;
+            extract.setInputCloud(inputCloud);
+            pcl::PointIndices::Ptr boundary_indices_ptr(new pcl::PointIndices());
+            boundary_indices_ptr->indices = boundary_indices;
+            extract.setIndices(boundary_indices_ptr);
+            extract.filter(*boundary_cloud);
+
+ */
         }
         mState=static_cast<int>(pTracker->mLastProcessedState);
     }

@@ -1,7 +1,7 @@
 #include "Frame.h"
 #include "Converter.h"
 #include <thread>
-
+#include <pcl/features/boundary.h>
 
 using namespace std;
 using namespace cv;
@@ -52,7 +52,9 @@ namespace Planar_SLAM {
             SetPose(frame.mTcw);
     }
 */
+
     ////zzw
+    //Copy Constructor
     //mvDepthLine_zzw
     //mvLines3D mv3DLineforMap dealWithLine blurNumber vSurfaceNormal vVanishingDirection mVF3DLines
     //vSurfaceNormalx vSurfaceNormaly vSurfaceNormalz vSurfacePointx vSurfacePointy vSurfacePointz
@@ -82,7 +84,8 @@ namespace Planar_SLAM {
               vSurfaceNormalx(frame.vSurfaceNormalx), vSurfaceNormaly(frame.vSurfaceNormaly), vSurfaceNormalz(frame.vSurfaceNormalz),
               vSurfacePointx(frame.vSurfacePointx), vSurfacePointy(frame.vSurfacePointy), vSurfacePointz(frame.vSurfacePointz),
               vVanishingLinex(frame.vVanishingLinex),vVanishingLiney(frame.vVanishingLiney),vVanishingLinez(frame.vVanishingLinez),
-              mvPlanePoints(frame.mvPlanePoints),mvDepthLine_zzw(frame.mvDepthLine_zzw),mvManhattanForLoop(frame.mvManhattanForLoop) {
+              mvPlanePoints(frame.mvPlanePoints),mvDepthLine_zzw(frame.mvDepthLine_zzw),mvManhattanForLoop(frame.mvManhattanForLoop),
+              havePlaneEdge(frame.havePlaneEdge),allPlaneEdgeLine(frame.allPlaneEdgeLine){
         for (int i = 0; i < FRAME_GRID_COLS; i++)
             for (int j = 0; j < FRAME_GRID_ROWS; j++)
                 mGrid[i][j] = frame.mGrid[i][j];
@@ -164,6 +167,8 @@ namespace Planar_SLAM {
         UndistortKeyPoints();
 
         ComputeStereoFromRGBD(depth);
+
+        ComputePlaneEdge();
 
         mvpMapPoints = vector<MapPoint *>(N, static_cast<MapPoint *>(NULL));
         mvpMapLines = vector<MapLine *>(NL, static_cast<MapLine *>(NULL));
@@ -954,8 +959,8 @@ namespace Planar_SLAM {
             if (!valid) {
                 continue;
             }
-
             mvPlanePoints.push_back(*coarseCloud);
+            mvPlanePointsAll.push_back(inputCloud);
 
             mvPlaneCoefficients.push_back(coef);
         }
@@ -1140,6 +1145,166 @@ namespace Planar_SLAM {
         mvImagePyramid_zzw.resize(mpORBextractorLeft->GetLevels());
         for (int l = 0; l < mpORBextractorLeft->GetLevels(); l++) {
             mvImagePyramid_zzw[l] = mpORBextractorLeft->mvImagePyramid[l].clone();
+        }
+    }
+
+
+    void Frame::ComputePlaneEdge(){
+        havePlaneEdge = false;
+        std::map<pair<int,int>, pair<Vector3f,Vector3f>> IntersectionLine;
+        for (int i = 0; i < std::max(static_cast<int>(mvPlaneCoefficients.size()-1),0); ++i) {
+            for (int j = i+1; j < mvPlaneCoefficients.size(); ++j) {
+                if (mvPlanePointsAll[i]->size() < 10000 || mvPlanePointsAll[j]->size() < 10000)
+                    continue;
+
+                auto p1 = mvPlaneCoefficients[i];
+                auto p2 = mvPlaneCoefficients[j];
+                Vector3f planeNormal1(p1.at<float>(0),p1.at<float>(1),p1.at<float>(2));
+                Vector3f planeNormal2(p2.at<float>(0),p2.at<float>(1),p2.at<float>(2));
+                Vector3f IntersectionLineVector = planeNormal1.cross(planeNormal2);
+                float cosAngle = planeNormal1.dot(planeNormal2) / (planeNormal1.norm() * planeNormal2.norm());
+                float thresholdDegrees = 5;
+                if (cosAngle >= std::cos(thresholdDegrees * M_PI / 180.0f) || cosAngle <= -std::cos(thresholdDegrees * M_PI / 180.0f))
+                    continue;
+
+                IntersectionLineVector.normalize();
+
+                float a1, b1, c1, d1, a2,b2, c2, d2;
+                float tempy, tempz;
+                a1= p1.at<float>(0);
+                b1= p1.at<float>(1);
+                c1= p1.at<float>(2);
+                d1= p1.at<float>(3);
+                a2= p2.at<float>(0);
+                b2= p2.at<float>(1);
+                c2= p2.at<float>(2);
+                d2= p2.at<float>(3);
+
+                tempz= -(d1 / b1 - d2 / b2) / (c1 / b1 - c2 / b2);
+                tempy= (-c1 / b1)*tempz - d1 / b1;
+                IntersectionLine.insert(std::pair< pair<int,int>, pair<Vector3f,Vector3f> >(make_pair(i,j),make_pair(IntersectionLineVector,Vector3f(0,tempy,tempz))));
+                //                    IntersectionLine[make_pair(i,j)] = make_pair(IntersectionLineVector,Vector3f(0,tempy,tempz));
+            }
+        }
+
+        if (!IntersectionLine.empty()){
+            float intersectionLineThrMore = 0.2;
+            float intersectionLineThrLess = 0.02;
+            float distanceThr = 0.005;
+            std::vector<PointT> resultCloudPoints;
+            std::vector< pair<PointT,PointT> > allPlaneEdgeLineTem;
+
+            for (auto it = IntersectionLine.begin(); it !=IntersectionLine.end(); ++it) {
+                if (it->first.first < 0 || it->first.first > mvPlaneCoefficients.size() || it->first.second < 0 || it->first.second > mvPlaneCoefficients.size())
+                    continue;
+                resultCloudPoints.clear();
+                float a = it->second.first(0,0);
+                float b = it->second.first(1,0);
+                float c = it->second.first(2,0);
+                float x0 = it->second.second(0,0);
+                float y0 = it->second.second(1,0);
+                float z0 = it->second.second(2,0);
+
+                auto planeIndex = it->first;
+
+                std::vector<PointT> cloudPointsMoreP1;
+                std::vector<PointT> cloudPointsLessP1;
+                std::vector<PointT> cloudPointsMoreP2;
+                std::vector<PointT> cloudPointsLessP2;
+
+
+                for(auto cloudPoints : *mvPlanePointsAll[planeIndex.first]){
+                    float x = cloudPoints.x;
+                    float y = cloudPoints.y;
+                    float z = cloudPoints.z;
+                    float t = (x - x0) / a;
+                    float judgment1 = fabs(t - ((y - y0) / b));
+                    float judgment2 = fabs(t - ((z - z0) / c));
+
+                    if ( judgment1 < intersectionLineThrMore && judgment2 < intersectionLineThrMore ){
+                        cloudPointsMoreP1.push_back(cloudPoints);
+                        if ( judgment1 < intersectionLineThrLess && judgment2 < intersectionLineThrLess )
+                            cloudPointsLessP1.push_back(cloudPoints);
+                    }
+                }
+                for(auto cloudPoints : *mvPlanePointsAll[planeIndex.second]){
+                    float x = cloudPoints.x;
+                    float y = cloudPoints.y;
+                    float z = cloudPoints.z;
+                    float t = (x - x0) / a;
+                    float judgment1 = fabs(t - ((y - y0) / b));
+                    float judgment2 = fabs(t - ((z - z0) / c));
+
+                    if ( judgment1 < intersectionLineThrMore && judgment2 < intersectionLineThrMore ){
+                        cloudPointsMoreP2.push_back(cloudPoints);
+                        if ( judgment1 < intersectionLineThrLess && judgment2 < intersectionLineThrLess )
+                            cloudPointsLessP2.push_back(cloudPoints);
+                    }
+                }
+
+
+                float min;
+                for (auto point:cloudPointsLessP1) {
+                    min = 100;
+                    for (auto anotherPlanePoint:cloudPointsMoreP2) {
+                        float dx = anotherPlanePoint.x - point.x;
+                        float dy = anotherPlanePoint.y - point.y;
+                        float dz = anotherPlanePoint.z - point.z;
+                        float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
+//                            float distance = pcl::euclideanDistance(point,anotherPlanePoint);
+                        if (distance < min && distance != 0)
+                            min = distance;
+                    }
+                    if (min < distanceThr)
+                        resultCloudPoints.push_back(point);
+                }
+
+                for (auto point:cloudPointsLessP2) {
+                    min = 100;
+                    for (auto anotherPlanePoint:cloudPointsMoreP1) {
+                        float dx = anotherPlanePoint.x - point.x;
+                        float dy = anotherPlanePoint.y - point.y;
+                        float dz = anotherPlanePoint.z - point.z;
+                        float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
+//                            float distance = pcl::squaredEuclideanDistance(point,anotherPlanePoint);
+                        if (distance < min && distance != 0)
+                            min = distance;
+                    }
+                    if (min < distanceThr)
+                        resultCloudPoints.push_back(point);
+                }
+
+                float maxDistance = 0;
+                bool flag = false;
+                pair<PointT,PointT> planeEdgeLine;
+
+                for (int i = 0; i < std::max(static_cast<int>(resultCloudPoints.size()-1),0); ++i) {
+                    for (int j = i+1; j < resultCloudPoints.size(); ++j) {
+                        auto p1 = resultCloudPoints[i];
+                        auto p2 = resultCloudPoints[j];
+                        float dx = p1.x - p2.x;
+                        float dy = p1.y - p2.y;
+                        float dz = p1.z - p2.z;
+                        float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
+                        if (distance > maxDistance){
+                            maxDistance = distance;
+                            planeEdgeLine.first = p1;
+                            planeEdgeLine.second = p2;
+                            flag = true;
+                        }
+                    }
+                }
+                if (flag)
+                    allPlaneEdgeLineTem.push_back(planeEdgeLine);
+            }
+
+            if (!allPlaneEdgeLineTem.empty()){
+                allPlaneEdgeLine.clear();
+                for (auto pair:allPlaneEdgeLineTem) {
+                    allPlaneEdgeLine.push_back(pair);
+                }
+                havePlaneEdge = true;
+            }
         }
     }
 } //namespace Planar_SLAM
