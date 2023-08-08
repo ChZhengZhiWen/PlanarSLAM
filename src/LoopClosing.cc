@@ -60,6 +60,7 @@ namespace Planar_SLAM
 
         while(1)
         {
+            break;
             // Check if there are keyframes in the queue
             if(CheckNewKeyFrames())
             {

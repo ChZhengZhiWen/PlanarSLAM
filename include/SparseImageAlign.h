@@ -91,7 +91,12 @@ namespace Planar_SLAM {
         };
         Cache pt_cache_;
         Cache seg_cache_;
+        Cache edge_cache_;
         std::vector<size_t> patch_offset;   // offset for the segment cache
+        std::vector<size_t> patch_offset_edge;   // offset for the segment cache
+
+        std::map<int,std::vector<Vector2f>> preCompute;
+        std::map<int,std::vector<Vector2f>> preComputeEnd;
 
         bool have_ref_patch_cache_;
         cv::Mat ref_patch_cache_;
@@ -99,6 +104,7 @@ namespace Planar_SLAM {
         int normTh = 20;
 
         int segNum;
+        int edgeNum;
 
         // 在ref中计算雅可比
         void precomputeReferencePatches();
@@ -117,8 +123,13 @@ namespace Planar_SLAM {
                                               Cache &cache, Matrix<float, 6, 6> &H, Matrix<float, 6, 1> &Jres,
                                               std::vector<float> &errors, float &chi2);
 
+        void computeGaussNewtonParamsPlaneEdge(const SE3f &T_cur_from_ref, bool linearize_system, bool compute_weight_scale,
+                                              Cache &cache, Matrix<float, 6, 6> &H, Matrix<float, 6, 1> &Jres,
+                                              std::vector<float> &errors, float &chi2);
+
         void precomputeGaussNewtonParamsPoints(Cache &cache);
         void precomputeGaussNewtonParamsSegments(Cache &cache);
+        void precomputeGaussNewtonParamsPlaneEdge(Cache &cache);
 
         virtual int solve();
 

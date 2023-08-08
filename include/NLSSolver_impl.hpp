@@ -57,7 +57,7 @@ void NLLSSolver<D, T>::optimizeGaussNewton(ModelType &model,float &_chi2) {
             std::cout << "Jres = " << Jres_ << std::endl;
             std::cout << "x_ = " << x_ << std::endl;
             stop_ = true;
-            getchar();
+//            getchar();
         }
 
         // check if error increased since last optimization
