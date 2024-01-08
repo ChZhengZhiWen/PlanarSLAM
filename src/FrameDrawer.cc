@@ -282,7 +282,7 @@ namespace Planar_SLAM
 //                }
 
             }
-/*
+
             for(int i=0;i<n;i++)
             {
                 if(vbVO[i] || vbMap[i])
@@ -317,7 +317,7 @@ namespace Planar_SLAM
                 }
             }
 
-            */
+
         }
         cv::Mat imWithInfo;
         DrawTextInfo(im,state, imWithInfo);

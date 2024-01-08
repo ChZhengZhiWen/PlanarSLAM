@@ -503,6 +503,8 @@ namespace Planar_SLAM {
             if (!mCurrentFrame.mpReferenceKF)
                 mCurrentFrame.mpReferenceKF = mpReferenceKF;
 
+            mLLastFrame = Frame(mLastFrame);
+
             // 保存上一帧的数据,当前帧变上一帧
             mLastFrame = Frame(mCurrentFrame);
         }
@@ -2406,7 +2408,7 @@ namespace Planar_SLAM {
 
         //!ORB光点就是15 这里设为5是不是太小了
         if (initialMatches < 5) {
-            cout << "******************TranslationEstimation: Before: Not enough matches" << endl;
+            cout << "TranslationEstimation: Before: Not enough matches" << endl;
             return false;
         }
 
@@ -2497,8 +2499,6 @@ namespace Planar_SLAM {
     }
 
     bool Tracking::TranslationEstimation_MW() {
-        cout << "TranslationEstimation_MW+++++++++++++++++++++++++++++++" << endl;
-
         // Compute Bag of Words vector
         //将当前帧的描述子转化为BoW向量
         mCurrentFrame.ComputeBoW();
@@ -2527,9 +2527,9 @@ namespace Planar_SLAM {
 
         int initialMatches = nmatches + lmatches + planeMatches;
 
-        //!ORB光点就是15 这里设为5是不是太小了
+        //!ORB光点就是15 这里设为5是不是太小了 !!!必须是5 planarSlam这么改是有意义的
         if (initialMatches < 5) {
-            cout << "******************TranslationEstimation: Before: Not enough matches" << endl;
+            cout << "TranslationEstimation_MW: Before: Not enough matches" << endl;
             return false;
         }
 
@@ -3949,8 +3949,18 @@ namespace Planar_SLAM {
         Sophus::SE3f TCR;
         Mat TCR_;
 
-        if (bManhattan)
+        if (bManhattan){
             mRotation_wc.copyTo(mCurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3));
+        }
+
+
+        if (mLastFrame.NL < 40){
+            cv::Mat Tl_ll;
+            Tl_ll = mLastFrame.mTcw * mLLastFrame.mTcw.inv();
+            Tl_ll = Tl_ll.rowRange(0, 3).colRange(0, 3);
+            mLastFrame.mLKLine.clear();
+            AddSegmentByLK(mLastFrame,mLLastFrame,Tl_ll);
+        }
 
         size_t ret = mpAlign->run(&mLastFrame, &mCurrentFrame, TCR);
 
@@ -4494,4 +4504,208 @@ namespace Planar_SLAM {
             }
         }
     }
+
+    void Tracking::AddSegmentByLK(Frame &CurrentFrame, Frame &LastFrame,cv::Mat Rcl){
+        cv::Mat img_last = LastFrame.mImGray.clone();
+        cv::Mat img_cur = CurrentFrame.mImGray.clone();
+        cv::Mat Kinv;
+        bool tag = cv::invert(CurrentFrame.mK,Kinv);
+
+
+        std::vector<int> matches_12;
+        LSDmatcher lmatcher(0.85, true);
+        matches_12.resize(LastFrame.NL, -1);
+        int nl_matches = lmatcher.match(LastFrame.mLdesc, CurrentFrame.mLdesc, 0.9, matches_12);
+
+        //画出两条匹配的线段
+        cv::Mat img1 = LastFrame.mImGray.clone();
+        cv::Mat img2 = CurrentFrame.mImGray.clone();
+        cvtColor(img1,img1,CV_GRAY2BGR);
+        cvtColor(img2,img2,CV_GRAY2BGR);
+
+        for (int i = 0; i < LastFrame.NL; ++i){
+            int index_cur = matches_12[i];
+            //无匹配
+            if(index_cur==-1){
+                //对线段进行分段采样 并用光流进行跟踪
+                double len = cv::norm(LastFrame.mvKeylinesUn[i].getStartPoint() - LastFrame.mvKeylinesUn[i].getEndPoint());
+                //线段太短放弃
+                if(len < 30)
+                    continue;
+
+                double numSmp = (double)min((int)len,20);
+                vector<cv::Point2f> ptLast,ptCur,ptCur_lk,ptCur_lk_tem,ptCur_lk_res;
+                vector<uchar> status;
+                vector<float> error;
+                for(int j=0;j<=numSmp;j++)
+                {
+                    cv::Point2d pt = LastFrame.mvKeylinesUn[i].getStartPoint() * (1 - j / numSmp) +
+                                     LastFrame.mvKeylinesUn[i].getEndPoint() * (j / numSmp);
+                    if(pt.x<0||pt.y<0||pt.x>=LastFrame.mImGray.cols||pt.y>=LastFrame.mImGray.rows)continue;
+                    ptLast.push_back(pt);
+                }
+
+                ///通过  p2 = K * R21* Kinv * p1  用mw辅助计算采样点在当前帧上的估计位置  作为光流初始值
+                /// 论文Highly Efficient Line Segment Tracking with an IMU-KLT Prediction
+                //and a Convex Geometric Distance Minimization
+                for(int j=0;j<ptLast.size();j++)
+                {
+                    cv::Mat p1 = (cv::Mat_<float>(3,1) << ptLast[j].x , ptLast[j].y , 1.0);
+                    cv::Mat mat;
+                    mat = CurrentFrame.mK * Rcl * Kinv * p1;
+                    cv::Point2f p2(mat.at<float>(0,0),mat.at<float>(1,0));
+                    ptCur.push_back(p2);
+                }
+                cv::calcOpticalFlowPyrLK(img_cur,img_cur,ptCur,ptCur_lk,status,error);
+                //跟踪的结果存储在ptCur_lk中  ptCur_lk_tem存放光流跟踪成功的结果
+                ///ptCur_lk_tem中第一个元素就是预测线段的起点 最后一个元素就是预测线段的终点
+                for(int j=0;j<ptCur_lk.size();j++)
+                    if(status[j]) ptCur_lk_tem.push_back(ptCur_lk[j]);
+
+                //进行ransac拟合  剔除离群值
+                std::pair<double,double> fit_line = fitLineRANSAC(ptCur_lk_tem,10,10);
+                //RANSAC拟合直线失败
+                if(fit_line.first == 0.0 && fit_line.second == 0.0)
+                    continue;
+
+                //ptCur_lk_tem中存在离群值  离群值距离估计出来的直线的距离大于5
+                bool inLiner[ptCur_lk_tem.size()];
+                fill(inLiner,inLiner+ptCur_lk_tem.size(),true);
+                for(int j=0;j<ptCur_lk_tem.size();j++)
+                {
+                    double dis = ptCur_lk_tem[j].y - fit_line.first*ptCur_lk_tem[j].x - fit_line.second;
+                    if(dis>5.0)inLiner[j]=false;
+                }
+
+                for(int j=0;j<ptCur_lk_tem.size();j++)
+                    if(inLiner[j])
+                        ptCur_lk_res.push_back(ptCur_lk_tem[j]);
+
+                //判断光流得到的线段是否是特征线，将符合要求的线段存到Frame中
+                auto temImg = img2.clone();
+                if(isFeatureSegment(temImg,ptCur_lk_res[0],ptCur_lk_res[ptCur_lk_res.size()-1])){
+                    Vector3f lineS;
+                    lineS[0] = ptCur_lk_res[0].x;
+                    lineS[1] = ptCur_lk_res[0].y;
+                    lineS[2] = CurrentFrame.depth_CV_32F.at<float>(lineS[1], lineS[0]);
+
+                    Vector3f lineE;
+                    lineE[0] = ptCur_lk_res[ptCur_lk_res.size()-1].x;
+                    lineE[1] = ptCur_lk_res[ptCur_lk_res.size()-1].y;
+                    lineE[2] = CurrentFrame.depth_CV_32F.at<float>(lineE[1], lineE[0]);
+
+                    CurrentFrame.mLKLine.push_back(make_pair(lineS,lineE));
+//                    cv::line(img2,ptCur_lk_res[0],ptCur_lk_res[ptCur_lk_res.size()-1]
+//                        ,cv::Scalar(0,255,0),1);
+                }
+            }
+
+//
+//            ///当前帧的线段
+//            cv::line(img2,CurrentFrame.mvKeylinesUn[index_cur].getStartPoint(),CurrentFrame.mvKeylinesUn[index_cur].getEndPoint()
+//                    ,cv::Scalar(0,0,255),1);
+//            ///上一帧的线段
+//            cv::line(img1,LastFrame.mvKeylinesUn[i].getStartPoint(),LastFrame.mvKeylinesUn[i].getEndPoint(),
+//                     cv::Scalar(0,0,255),1);
+
+
+        }
+
+//        cv::Mat combine_img;
+//        cvtColor(combine_img,combine_img,CV_GRAY2BGR);
+//        cv::hconcat(img1,img2,combine_img);
+//        cv::imshow("tem",combine_img);
+//        getchar();
+
+    }
+
+    std::pair<double, double> Tracking::fitLineRANSAC(const std::vector<cv::Point2f >& points, int numIterations, double distanceThreshold) {
+        int numPoints = points.size();
+        if (numPoints < 2) {
+            //std::cerr << "Insufficient points for line fitting." << std::endl;
+            return std::make_pair(0.0, 0.0);
+        }
+
+        std::pair<double, double> bestLine;
+        int maxInliers = 0;
+
+        srand(static_cast<unsigned>(time(nullptr)));
+
+        for (int iteration = 0; iteration < numIterations; ++iteration) {
+            // 随机选择两个点
+            int index1 = rand() % numPoints;
+            int index2 = rand() % numPoints;
+
+            while (index2 == index1) {
+                index2 = rand() % numPoints;
+            }
+
+            cv::Point2f p1 = points[index1];
+            cv::Point2f p2 = points[index2];
+
+            // 计算直线的斜率和截距
+            double m = (p2.y - p1.y) / (p2.x - p1.x);
+            double b = p1.y - m * p1.x;
+
+            // 计算内点数
+            int inliers = 0;
+            for (const cv::Point2f& point : points) {
+                double d = std::abs(point.y - m * point.x - b);
+                if (d < distanceThreshold) {
+                    inliers++;
+                }
+            }
+
+            // 更新最佳拟合直线
+            if (inliers > maxInliers) {
+                maxInliers = inliers;
+                bestLine = std::make_pair(m, b);
+            }
+        }
+
+        return bestLine;
+    }
+
+    bool Tracking::isFeatureSegment(const cv::Mat& image, const cv::Point& start, const cv::Point& end) {
+        cv::Mat grayImage;
+        cv::cvtColor(image, grayImage, cv::COLOR_BGR2GRAY); // 将图像转换为灰度图像
+
+        cv::Mat gradientX, gradientY;
+        cv::Sobel(grayImage, gradientX, CV_32F, 1, 0); // 计算X方向上的梯度
+        cv::Sobel(grayImage, gradientY, CV_32F, 0, 1); // 计算Y方向上的梯度
+
+        cv::Point2f diff = cv::Point2f(end.x, end.y) - cv::Point2f(start.x, start.y);
+        float length = cv::norm(diff); // 计算线段的长度
+
+        cv::Point2f direction = diff / length; // 计算线段的单位方向向量
+
+        float sumGradient = 0.0;
+        int numPixels = 0;
+
+        for (float t = 0.0; t <= 1.0; t += 0.1) {
+            cv::Point2f point = cv::Point2f(start.x, start.y) + t * length * direction;
+            int x = static_cast<int>(point.x);
+            int y = static_cast<int>(point.y);
+
+            if (x < 0 || x >= image.cols || y < 0 || y >= image.rows) {
+                continue; // 跳过超出图像范围的像素
+            }
+
+            float gradX = gradientX.at<float>(y, x);
+            float gradY = gradientY.at<float>(y, x);
+
+            float gradientMagnitude = std::sqrt(gradX * gradX + gradY * gradY);
+            sumGradient += gradientMagnitude;
+            numPixels++;
+        }
+
+        float avgGradient = sumGradient / numPixels;
+
+        // 根据实际应用需求，设置阈值来判断线段是否为特征线段
+        // 这里简单地将平均梯度阈值设置为一个固定值
+        float threshold = 50.0;
+
+        return avgGradient > threshold;
+    }
+
 } //namespace Planar_SLAM

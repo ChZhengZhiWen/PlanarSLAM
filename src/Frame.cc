@@ -85,7 +85,7 @@ namespace Planar_SLAM {
               vSurfacePointx(frame.vSurfacePointx), vSurfacePointy(frame.vSurfacePointy), vSurfacePointz(frame.vSurfacePointz),
               vVanishingLinex(frame.vVanishingLinex),vVanishingLiney(frame.vVanishingLiney),vVanishingLinez(frame.vVanishingLinez),
               mvPlanePoints(frame.mvPlanePoints),mvDepthLine_zzw(frame.mvDepthLine_zzw),mvManhattanForLoop(frame.mvManhattanForLoop),
-              havePlaneEdge(frame.havePlaneEdge),allPlaneEdgeLine(frame.allPlaneEdgeLine){
+              havePlaneEdge(frame.havePlaneEdge),allPlaneEdgeLine(frame.allPlaneEdgeLine),mImGray(frame.mImGray),depth_CV_32F(frame.depth_CV_32F){
         for (int i = 0; i < FRAME_GRID_COLS; i++)
             for (int j = 0; j < FRAME_GRID_ROWS; j++)
                 mGrid[i][j] = frame.mGrid[i][j];
@@ -133,6 +133,7 @@ namespace Planar_SLAM {
 ////imDepth = CV_16U  depth=CV_32F
             imDepth.convertTo(depth, CV_32F, depthMapFactor);
         }
+        depth_CV_32F = depth;
         cv::Mat tmpK = (cv::Mat_<double>(3, 3) << fx, 0, cx,
                 0, fy, cy,
                 0, 0, 1);

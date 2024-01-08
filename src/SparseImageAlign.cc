@@ -48,6 +48,15 @@ using namespace cv::line_descriptor;
             float length = (ep_l-sp_l).norm();
             total_length += length;
         }
+//
+//        for (auto & it : ref_frame_->mLKLine) {
+//            Vector2f sp_l;
+//            sp_l << it.first[0], it.first[1];
+//            Vector2f ep_l;
+//            ep_l << it.second[0], it.second[1];
+//            float length = (ep_l-sp_l).norm();
+//            total_length += length;
+//        }
         int max_num_seg_samples = std::ceil( total_length / patch_size_ );
 
         float edge_total_length = 0;
@@ -68,9 +77,22 @@ using namespace cv::line_descriptor;
         }
         int max_num_edge_samples = std::ceil( edge_total_length / patch_size_ );
 
+        //lk光流获得的线段
+        float lkSegment_total_length = 0;
+        for (auto & it : ref_frame_->mLKLine) {
+            Vector2f sp_l;
+            sp_l << it.first[0], it.first[1];
+            Vector2f ep_l;
+            ep_l << it.second[0], it.second[1];
+            float length = (ep_l-sp_l).norm();
+            lkSegment_total_length += length;
+        }
+        int max_num_lkSegment_samples = std::ceil( lkSegment_total_length / patch_size_ );
+
         pt_cache_   = Cache( ref_frame_->N, patch_area_ );
         seg_cache_  = Cache( max_num_seg_samples, patch_area_ );
         edge_cache_ = Cache( max_num_edge_samples * 2, patch_area_ );
+        lkSeg_cache_ = Cache( max_num_lkSegment_samples * 2, patch_area_ );
 
         //Tcr
         //! cv:mat转Sophus::SE3
@@ -92,9 +114,11 @@ cout<<"--------------------------------------------"<<endl;
             pt_cache_.jacobian.setZero();
             seg_cache_.jacobian.setZero();
             edge_cache_.jacobian.setZero();
+            lkSeg_cache_.jacobian.setZero();
 
             seg_cache_.visible_fts.resize(seg_cache_.ref_patch.rows,false);
             edge_cache_.visible_fts.resize(edge_cache_.ref_patch.rows,false);
+            lkSeg_cache_.visible_fts.resize(lkSeg_cache_.ref_patch.rows,false);
 
             jacobian_cache_.setZero();
             have_ref_patch_cache_ = false;
@@ -102,9 +126,11 @@ cout<<"--------------------------------------------"<<endl;
             n_iter_ = 10;
             segNum=0;
             edgeNum=0;
+            lkSegNum=0;
 
             seg_cache_.seg_ref_patch.clear();
             edge_cache_.seg_ref_patch.clear();
+            lkSeg_cache_.seg_ref_patch.clear();
 
             optimize(T_cur_from_ref,_chi2);
 //            cout<<endl;
@@ -390,7 +416,6 @@ cout<<"--------------------------------------------"<<endl;
         // define other interest variables
         std::vector<float> pt_errors;
         float pt_chi2 = 0.0;
-
         computeGaussNewtonParamsPoints(
                 T_cur_from_ref, linearize_system, compute_weight_scale,
                 pt_cache_, pt_H, pt_Jres, pt_errors, pt_chi2 );
@@ -400,7 +425,6 @@ cout<<"--------------------------------------------"<<endl;
         // define other interest variables
         std::vector<float> seg_errors;
         float seg_chi2 = 0.0;
-
         // compute the parameters for Gauss-Newton update
         computeGaussNewtonParamsSegments(
                 T_cur_from_ref, linearize_system, compute_weight_scale,
@@ -414,18 +438,40 @@ cout<<"--------------------------------------------"<<endl;
                 T_cur_from_ref, linearize_system, compute_weight_scale,
                 edge_cache_, edge_H, edge_Jres, edge_errors, edge_chi2 );
 
+        Matrix<float, 6, 6> lkSeg_H;
+        Matrix<float, 6, 1> lkSeg_Jres;
+        std::vector<float> lkSeg_errors;
+        float lkSeg_chi2 = 0.0;
+        computeGaussNewtonParamsLKSegments(
+                T_cur_from_ref, linearize_system, compute_weight_scale,
+                lkSeg_cache_, lkSeg_H, lkSeg_Jres, lkSeg_errors, lkSeg_chi2 );
+
         if(linearize_system)
         {
             // sum the contribution from both points and segments
-            H_    = pt_H    + seg_H    + edge_H;
-            Jres_ = pt_Jres + seg_Jres + edge_Jres;
+//            H_    = pt_H    + seg_H    + edge_H;
+//            Jres_ = pt_Jres + seg_Jres + edge_Jres;
 //            H_    = pt_H    + seg_H;
 //            Jres_ = pt_Jres + seg_Jres;
+//            H_    = pt_H    + seg_H + lkSeg_H;
+//            Jres_ = pt_Jres + seg_Jres + lkSeg_Jres;
+            H_    = pt_H    + seg_H + lkSeg_H + edge_H;
+            Jres_ = pt_Jres + seg_Jres + lkSeg_Jres + edge_Jres;
         }
 
-        float chi2 = pt_chi2 + seg_chi2 + edge_chi2;
+        float chi2 = pt_chi2 + seg_chi2 + lkSeg_chi2 + edge_chi2;
 //        float chi2 = pt_chi2 + seg_chi2;
-//cout<<"chi2 "<<(pt_chi2 + seg_chi2)/(n_meas_-edgeNum)<<"  edge "<<chi2 / n_meas_<<endl;
+//cout<<"pt_chi2 "<<pt_chi2<<"  ptNum "<<(n_meas_-segNum-lkSegNum)<<endl;
+//cout<<"seg_chi2 "<<seg_chi2<<"  segNum "<<segNum<<endl;
+//cout<<"lkSeg_chi2 "<<lkSeg_chi2<<"  lkSegNum "<<lkSegNum<<endl;
+//cout<<"chi2/n_meas_ "<<chi2 / n_meas_<<endl<<endl;
+
+//if(seg_chi2==0){
+//    cout<<"  NL "<<ref_frame_->NL;
+//    getchar();
+//}
+
+
 
         // compute the weights on the first iteration
         if (compute_weight_scale && iter_ == 0)
@@ -586,14 +632,7 @@ cout<<"--------------------------------------------"<<endl;
             if(!*visiblity_it)
                 continue;
 
-//            MapLine *ml = ref_frame_->mvpMapLines[i];
-//            if (!ml || ml->isBad() || ref_frame_->mvbLineOutlier[i]) {
-//                continue;
-//            }
-//
             std::pair<float, float> depth = ref_frame_->mvDepthLine_zzw[i];
-//            if (depth.first < 0 || depth.second < 0)
-//                continue;
 
             const cv::line_descriptor::KeyLine kl = ref_frame_->mvKeylinesUn[i];
             Vector2f sp_l(kl.startPointX,kl.startPointY),ep_l(kl.endPointX,kl.endPointY);
@@ -715,6 +754,7 @@ cout<<"--------------------------------------------"<<endl;
             Jres_.setZero();
         }//end feature-sweep
     }
+
 
     void SparseImgAlign::computeGaussNewtonParamsPlaneEdge(
             const SE3f &T_cur_from_ref,
@@ -911,11 +951,176 @@ cout<<"--------------------------------------------"<<endl;
         }//end feature-sweep
     }
 
+    void SparseImgAlign::computeGaussNewtonParamsLKSegments(
+            const SE3f &T_cur_from_ref,
+            bool linearize_system,
+            bool compute_weight_scale,
+            Cache &cache,
+            Matrix<float, 6, 6> &H,
+            Matrix<float, 6, 1> &Jres,
+            std::vector<float> &errors,
+            float &chi2)
+    {
+        Patch patch( patch_size_, cur_frame_->mvImagePyramid_zzw[level_] );
+        Patch resPatch;
+        //display_ default false
+        if(linearize_system && display_)
+            resPatch = Patch( patch_size_, resimg_ );
+
+        if(compute_weight_scale)
+            errors.reserve(cache.visible_fts.size());
+
+        const float scale = ref_frame_->mvInvScaleFactors[level_];
+
+        // reset chi2 variable to zero
+        chi2 = 0.0;
+
+        // set GN parameters to zero prior to accumulate results
+        H.setZero();
+        Jres.setZero();
+        std::vector<size_t>::iterator offset_it = patch_offset_lkSeg.begin();
+        size_t cache_idx = 0;
+        std::vector<bool>::iterator visiblity_it = cache.visible_fts.begin();
+
+        Matrix<float,6,6> H_ls    = Matrix<float, 6, 6>::Zero();
+        Matrix<float,6,1> Jres_ls = Matrix<float, 6, 1>::Zero();
+
+        int NLK = ref_frame_->mLKLine.size();
+
+        for(int i = 0; i < NLK; i++, ++offset_it, ++visiblity_it)
+        {
+            if(!*visiblity_it)
+                continue;
+
+            std::pair<float, float> depth;
+            depth = make_pair(ref_frame_->mLKLine[i].first[2],ref_frame_->mLKLine[i].second[2]);
+
+            Vector2f sp_l,ep_l;
+            float length;
+            sp_l<<ref_frame_->mLKLine[i].first[0],ref_frame_->mLKLine[i].first[1];
+            ep_l<<ref_frame_->mLKLine[i].second[0],ref_frame_->mLKLine[i].second[1];
+            length = (ep_l-sp_l).norm();
+
+            cache_idx = *offset_it;
+
+            Vector2f inc2f;
+            size_t N_samples = setupSampling(patch.size, inc2f, sp_l, ep_l, length);
+            N_samples = 1 + (N_samples-1) * scale;
+
+            Vector3f p_ref,q_ref;
+            p_ref[0] = (sp_l[0] - ref_frame_->cx) * depth.first * ref_frame_->invfx;
+            p_ref[1] = (sp_l[1] - ref_frame_->cy) * depth.first * ref_frame_->invfy;
+            p_ref[2] = depth.first;
+            q_ref[0] = (ep_l[0] - ref_frame_->cx) * depth.second * ref_frame_->invfx;
+            q_ref[1] = (ep_l[1] - ref_frame_->cy) * depth.second * ref_frame_->invfy;
+            q_ref[2] = depth.second;
+
+            Vector3f inc3f = (q_ref-p_ref) / (N_samples-1);
+            Vector3f xyz_ref = p_ref;
+
+
+            // Evaluate over the patch for each point sampled in the segment (including extremes)
+            Matrix<float,6,6> H_    = Matrix<float, 6, 6>::Zero();
+            Matrix<float,6,1> Jres_ = Matrix<float, 6, 1>::Zero();
+            vector<float> ls_res;
+            bool good_line = true;
+
+            for(unsigned int sample = 0; sample < N_samples; ++sample, xyz_ref+=inc3f )
+            {
+                const Vector3f xyz_cur(T_cur_from_ref * xyz_ref);
+                const Vector2f uv_cur(cur_frame_->Camera2Pixel(xyz_cur));
+                const Vector2f uv_cur_pyr(uv_cur * scale);
+
+                patch.setPosition(uv_cur_pyr);
+
+                if(!patch.isInFrame(patch.halfsize+1))
+                {
+                    cache_idx += patch.size; // Do not lose position of the next patch in cache!
+                    good_line = false;
+                    sample    = N_samples;
+                    continue;
+                }
+
+                patch.computeInterpWeights();
+
+                patch.setRoi();
+
+                float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + cache_idx;
+                uint8_t* img_ptr;
+                const int stride = patch.stride;
+                cv::MatIterator_<float> itDisp;
+                //display_ default false
+                if(linearize_system && display_)
+                {
+                    resPatch.setPosition(uv_cur_pyr);
+                    resPatch.setRoi();
+                    itDisp = resPatch.roi.begin<float>();
+                }
+
+                for(int y=0; y<patch.size; ++y)
+                {
+                    img_ptr = patch.roi.ptr(y);
+                    for(int x=0; x<patch.size; ++x, ++img_ptr, ++cache_ptr, ++cache_idx)
+                    {
+                        const float intensity_cur = patch.wTL*img_ptr[0] + patch.wTR*img_ptr[1] + patch.wBL*img_ptr[stride] + patch.wBR*img_ptr[stride+1];
+
+                        const float res = intensity_cur - (*cache_ptr);
+
+                        ls_res.push_back(res);
+
+                        if(linearize_system)
+                        {
+                            // compute Jacobian, weighted Hessian and weighted "steepest descend images" (times error)
+                            const Sophus::Vector6f J(cache.jacobian.col(cache_idx));
+                            H_.noalias()     += J*J.transpose() ;
+                            Jres_.noalias()  -= J*res;
+                            //display_ default false
+                            if(display_)
+                            {
+                                *itDisp = res/255.0;
+                                ++itDisp;
+                            }
+                        }
+                    }//end col-sweep of current row
+                }//end row-sweep
+            }//end segment-sweep
+
+            float res_ = 0.0, res2_;
+            for(vector<float>::iterator it = ls_res.begin(); it != ls_res.end(); ++it){
+                res_ += fabsf(*it);
+            }
+
+            res_ = res_ / double(N_samples);
+
+            if( good_line && res_ < 200.0)  // debug
+            {
+                // used to compute scale for robust cost
+                if(compute_weight_scale)
+                    errors.push_back(res_);
+                // robustification
+                float weight = 1.0;
+                // update total H and J
+                H.noalias()    += H_    * weight / res_;  // only divide hessian once (H/res2 g/res)
+                Jres.noalias() += Jres_ * weight ;        // it is already negative
+                chi2           += res_*res_*weight;
+                n_meas_++;
+                lkSegNum++;
+
+            }
+
+            good_line = true;
+            ls_res.clear();
+            H_.setZero();
+            Jres_.setZero();
+        }//end feature-sweep
+    }
+
     void SparseImgAlign::precomputeReferencePatches_zzw()
     {
         precomputeGaussNewtonParamsPoints(pt_cache_);
         precomputeGaussNewtonParamsSegments(seg_cache_);
         precomputeGaussNewtonParamsPlaneEdge(edge_cache_);
+        precomputeGaussNewtonParamsLKSegments(lkSeg_cache_);
 
         // set flag to true to avoid repeating unnecessary computations in the following iterations
         have_ref_patch_cache_ = true;
@@ -1012,10 +1217,10 @@ cout<<"--------------------------------------------"<<endl;
         {
             *offset_it = cache_idx;
 
-            MapLine *ml = ref_frame_->mvpMapLines[i];
-            if (!ml || ml->isBad() || ref_frame_->mvbLineOutlier[i]) {
-                continue;
-            }
+//            MapLine *ml = ref_frame_->mvpMapLines[i];
+//            if (!ml || ml->isBad() || ref_frame_->mvbLineOutlier[i]) {
+//                continue;
+//            }
 
             const cv::line_descriptor::KeyLine kl = ref_frame_->mvKeylinesUn[i];
             Vector2f sp_l(kl.startPointX,kl.startPointY),ep_l(kl.endPointX,kl.endPointY);
@@ -1076,13 +1281,6 @@ cout<<"--------------------------------------------"<<endl;
                 // evaluate projection jacobian
                 Matrix<float,2,6> frame_jac;
                 frame_jac = JacobXYZ2Cam(xyz_ref);
-
-                if (cur_frame_->mnId>111110){
-                    cout<<"xyz_ref: "<<xyz_ref[0]<<" "<<xyz_ref[1]<<" "<<xyz_ref[2]<<endl;
-                    cout<<"depth:   "<<depth.first<<"  "<<depth.second<<endl;
-                    cout<<"frame_jac:   "<<frame_jac<<endl;
-                    getchar();
-                }
 
                 float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + cache_idx;
                 uint8_t* img_ptr;
@@ -1207,7 +1405,7 @@ cout<<"--------------------------------------------"<<endl;
                 float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + cache_idx;
                 uint8_t* img_ptr;
                 const int stride = patch.stride;
-                std::vector<float> cache_ptr_seg;
+                std::vector<float> cache_ptr_edge;
 
                 for(int y=0; y<patch.size; ++y)
                 {
@@ -1215,7 +1413,7 @@ cout<<"--------------------------------------------"<<endl;
                     for(int x=0; x<patch.size; ++x, ++img_ptr, ++cache_ptr, ++cache_idx)
                     {
                         *cache_ptr = patch.wTL*img_ptr[0] + patch.wTR*img_ptr[1] + patch.wBL*img_ptr[stride] + patch.wBR*img_ptr[stride+1];
-                        cache_ptr_seg.push_back(*cache_ptr);
+                        cache_ptr_edge.push_back(*cache_ptr);
 
                         float dx = 0.5f * ((patch.wTL*img_ptr[1] + patch.wTR*img_ptr[2] + patch.wBL*img_ptr[stride+1] + patch.wBR*img_ptr[stride+2])
                                            -(patch.wTL*img_ptr[-1] + patch.wTR*img_ptr[0] + patch.wBL*img_ptr[stride-1] + patch.wBR*img_ptr[stride]));
@@ -1228,10 +1426,132 @@ cout<<"--------------------------------------------"<<endl;
 
                     }//end col-sweep in current row
                 }//end row-sweep
-                cache.seg_ref_patch[i][sample] = cache_ptr_seg;
+                cache.seg_ref_patch[i][sample] = cache_ptr_edge;
             }//end segment-sweep (through sampled patches)
             preCompute[i] = tem;
             preComputeEnd[i] = tem1;
+        }//end feature-sweep
+    }
+
+    void SparseImgAlign::precomputeGaussNewtonParamsLKSegments(Cache &cache)
+    {
+        // initialize patch parameters (mainly define its geometry)
+        Patch patch( patch_size_, ref_frame_->mvImagePyramid_zzw[level_] );
+
+        const float scale = ref_frame_->mvInvScaleFactors[level_];
+        const float focal_length = ref_frame_->fx;
+        const int border = patch_halfsize_ + 1;
+
+        // TODO: feature_counter is no longer valid because each segment
+        //  has a variable number of patches (and total pixels)
+        std::vector<bool>::iterator visiblity_it = cache.visible_fts.begin();
+        int NLK = ref_frame_->mLKLine.size();
+
+        patch_offset_lkSeg = std::vector<size_t>(NLK,0);
+        std::vector<size_t>::iterator offset_it = patch_offset_lkSeg.begin();
+        size_t cache_idx = 0;
+
+        for(int i = 0; i < NLK; i++, ++visiblity_it, ++offset_it)
+        {
+            *offset_it = cache_idx;
+
+            Vector2f sp_l,ep_l;
+            float length;
+            sp_l<<ref_frame_->mLKLine[i].first[0],ref_frame_->mLKLine[i].first[1];
+            ep_l<<ref_frame_->mLKLine[i].second[0],ref_frame_->mLKLine[i].second[1];
+            length = (ep_l-sp_l).norm();
+
+
+            const float u_ref_s = sp_l[0]*scale;
+            const float v_ref_s = sp_l[1]*scale;
+            const float u_ref_e = ep_l[0]*scale;
+            const float v_ref_e = ep_l[1]*scale;
+            const int u_ref_i_s = floorf(u_ref_s);
+            const int v_ref_i_s = floorf(v_ref_s);
+            const int u_ref_i_e = floorf(u_ref_e);
+            const int v_ref_i_e = floorf(v_ref_e);
+
+            if (u_ref_i_s - border < 0 || v_ref_i_s - border < 0 || u_ref_i_s + border >= patch.full_img.cols ||
+                v_ref_i_s + border >= patch.full_img.rows)
+                continue;
+            if (u_ref_i_e - border < 0 || v_ref_i_e - border < 0 || u_ref_i_e + border >= patch.full_img.cols ||
+                v_ref_i_e + border >= patch.full_img.rows)
+                continue;
+
+
+            std::pair<float, float> depth;
+            depth = make_pair(ref_frame_->mLKLine[i].first[2],ref_frame_->mLKLine[i].second[2]);
+            if (depth.first <= 0 || depth.second <= 0)
+                continue;
+
+            *visiblity_it = true;
+
+            Vector2f inc2f;
+
+            size_t N_samples = setupSampling(patch.size, inc2f, sp_l, ep_l, length);
+
+            N_samples = 1 + (N_samples-1) * scale;
+
+            // Parameterize 2D segment
+            inc2f = inc2f * scale / (N_samples-1);
+            Vector2f px_ref = sp_l * scale;
+
+
+            Vector3f p_ref,q_ref;
+            p_ref[0] = (sp_l[0] - ref_frame_->cx) * depth.first * ref_frame_->invfx;
+            p_ref[1] = (sp_l[1] - ref_frame_->cy) * depth.first * ref_frame_->invfy;
+            p_ref[2] = depth.first;
+            q_ref[0] = (ep_l[0] - ref_frame_->cx) * depth.second * ref_frame_->invfx;
+            q_ref[1] = (ep_l[1] - ref_frame_->cy) * depth.second * ref_frame_->invfy;
+            q_ref[2] = depth.second;
+
+
+            Vector3f inc3f = (q_ref-p_ref) / (N_samples-1);
+            Vector3f xyz_ref = p_ref;
+
+            for(unsigned int sample = 0; sample<N_samples; ++sample, px_ref+=inc2f, xyz_ref+=inc3f )
+            {
+                patch.setPosition( px_ref );
+                patch.computeInterpWeights();
+                patch.setRoi();
+
+                // evaluate projection jacobian
+                Matrix<float,2,6> frame_jac;
+                frame_jac = JacobXYZ2Cam(xyz_ref);
+
+                if (cur_frame_->mnId>111110){
+                    cout<<"xyz_ref: "<<xyz_ref[0]<<" "<<xyz_ref[1]<<" "<<xyz_ref[2]<<endl;
+                    cout<<"depth:   "<<depth.first<<"  "<<depth.second<<endl;
+                    cout<<"frame_jac:   "<<frame_jac<<endl;
+                    getchar();
+                }
+
+                float* cache_ptr = reinterpret_cast<float*>(cache.ref_patch.data) + cache_idx;
+                uint8_t* img_ptr;
+                const int stride = patch.stride;
+                std::vector<float> cache_ptr_lkSeg;
+
+                for(int y=0; y<patch.size; ++y)
+                {
+                    img_ptr = patch.roi.ptr(y);
+                    for(int x=0; x<patch.size; ++x, ++img_ptr, ++cache_ptr, ++cache_idx)
+                    {
+                        *cache_ptr = patch.wTL*img_ptr[0] + patch.wTR*img_ptr[1] + patch.wBL*img_ptr[stride] + patch.wBR*img_ptr[stride+1];
+                        cache_ptr_lkSeg.push_back(*cache_ptr);
+
+                        float dx = 0.5f * ((patch.wTL*img_ptr[1] + patch.wTR*img_ptr[2] + patch.wBL*img_ptr[stride+1] + patch.wBR*img_ptr[stride+2])
+                                           -(patch.wTL*img_ptr[-1] + patch.wTR*img_ptr[0] + patch.wBL*img_ptr[stride-1] + patch.wBR*img_ptr[stride]));
+                        float dy = 0.5f * ((patch.wTL*img_ptr[stride] + patch.wTR*img_ptr[1+stride] + patch.wBL*img_ptr[stride*2] + patch.wBR*img_ptr[stride*2+1])
+                                           -(patch.wTL*img_ptr[-stride] + patch.wTR*img_ptr[1-stride] + patch.wBL*img_ptr[0] + patch.wBR*img_ptr[1]));
+
+                        // cache the jacobian
+                        lkSeg_cache_.jacobian.col(cache_idx) =
+                                (dx*frame_jac.row(0) + dy*frame_jac.row(1))*(focal_length * scale);
+
+                    }//end col-sweep in current row
+                }//end row-sweep
+                cache.seg_ref_patch[i][sample] = cache_ptr_lkSeg;
+            }//end segment-sweep (through sampled patches)
         }//end feature-sweep
     }
 

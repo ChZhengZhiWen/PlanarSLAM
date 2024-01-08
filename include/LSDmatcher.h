@@ -35,6 +35,11 @@ namespace Planar_SLAM
 
         static int DescriptorDistance(const cv::Mat &a, const cv::Mat &b);
 
+        int matchNNR(const cv::Mat &desc1, const cv::Mat &desc2, float nnr, std::vector<int> &matches_12);
+
+        int match(const cv::Mat &desc1, const cv::Mat &desc2, float nnr, std::vector<int> &matches_12);
+
+
     protected:
         float RadiusByViewingCos(const float &viewCos);
         float mfNNratio;

@@ -85,7 +85,8 @@ public:
     cv::Mat ClusterMultiManhattanFrame(vector<cv::Mat> &vRotationCandidate,double &clusterRatio);
     vector<vector<int>>  EasyHist(vector<float> &vDistance,int &histStart,float &histStep,int&histEnd);
 //    void SaveMesh(const string &filename);
-
+    std::pair<double, double> fitLineRANSAC(const std::vector<cv::Point2f >& points, int numIterations, double distanceThreshold);
+    bool isFeatureSegment(const cv::Mat& image, const cv::Point& start, const cv::Point& end);
 
 public:
 
@@ -223,6 +224,8 @@ protected:
 
     void addManhattanForLoop(KeyFrame *pF);
 
+    void AddSegmentByLK(Frame &CurrentFrame, Frame &LastFrame,cv::Mat Rcl);
+
     // In case of performing only localization, this flag is true when there are no matches to
     // points in the map. Still tracking will continue if there are enough matches with temporal points.
     // In that case we are doing visual odometry. The system will try to do relocalization to recover
@@ -288,6 +291,7 @@ protected:
     //Last Frame, KeyFrame and Relocalisation Info
     KeyFrame* mpLastKeyFrame;
     Frame mLastFrame;
+    Frame mLLastFrame;
     unsigned int mnLastKeyFrameId;
     unsigned int mnLastRelocFrameId;
 

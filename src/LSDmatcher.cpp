@@ -1014,6 +1014,70 @@ namespace Planar_SLAM
         return nFused;
     }
 
+    int LSDmatcher::match(const cv::Mat &desc1, const cv::Mat &desc2, float nnr, std::vector<int> &matches_12){
+
+        if (false)
+        {
+            int matches;
+            std::vector<int> matches_21;
+            // if (true)
+            // {
+            //     auto match_12 = std::async(std::launch::async, &matchNNR,
+            //                                std::cref(desc1), std::cref(desc2), nnr, std::ref(matches_12));
+            //     auto match_21 = std::async(std::launch::async, &matchNNR,
+            //                                std::cref(desc2), std::cref(desc1), nnr, std::ref(matches_21));
+            //     matches = match_12.get();
+            //     match_21.wait();
+            // }
+            // else
+            // {
+            matches = matchNNR(desc1, desc2, nnr, matches_12);
+            matchNNR(desc2, desc1, nnr, matches_21);
+            // }
+
+            for (int i1 = 0, nsize = matches_12.size(); i1 < nsize; ++i1)
+            {
+                int &i2 = matches_12[i1];
+                if (i2 >= 0 && matches_21[i2] != i1)
+                {
+                    i2 = -1;
+                    matches--;
+                }
+            }
+
+            return matches;
+        }
+        else
+            return matchNNR(desc1, desc2, nnr, matches_12);
+    }
+
+    int LSDmatcher::matchNNR(const cv::Mat &desc1, const cv::Mat &desc2, float nnr, std::vector<int> &matches_12){
+
+        int matches = 0;
+        ///初始化为-1
+        matches_12.resize(desc1.rows, -1);
+
+        std::vector<std::vector<cv::DMatch>> matches_;
+        cv::Ptr<cv::BFMatcher> bfm = cv::BFMatcher::create(cv::NORM_HAMMING, false); // cross-check
+        bfm->knnMatch(desc1, desc2, matches_, 2);
+
+        if (desc1.rows != matches_.size())
+            throw std::runtime_error("[matchNNR] Different size for matches and descriptors!");
+
+        for (int idx = 0, nsize = desc1.rows; idx < nsize; ++idx)
+        {
+            if (matches_[idx][0].distance < matches_[idx][1].distance * nnr)
+            {
+                matches_12[idx] = matches_[idx][0].trainIdx;
+                matches++;
+            }
+        }
+        return matches;
+    }
+
+
+
+
 //    int LSDmatcher::Fuse(KeyFrame *pKF, const vector<MapLine *> &vpMapLines)
 //    {
 //        cv::Mat Rcw = pKF->GetRotation();

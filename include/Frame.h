@@ -307,6 +307,8 @@ namespace Planar_SLAM
 
         vector<cv::Mat> mvManhattanForLoop;
         cv::Mat mManhattan_Rotation_cm;
+        vector<pair<Vector3f,Vector3f>> mLKLine;
+        cv::Mat depth_CV_32F;
 
     private:
 
